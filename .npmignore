@@ -1,0 +1,11 @@
+tests/
+tools/
+config/
+docs/
+third_party/
+*.pdf
+*.docx
+*.epub
+*.onnx
+.env*
+.pi/
