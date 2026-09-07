@@ -11,3 +11,12 @@ coverage/
 .vscode/
 .idea/
 .pi/knowledge-studio/
+.pi/knowledge-studio-v2/
+.pi/knowledge-studio-v2-pdf-jobs/
+# Local book-derived illustrations and retrieval artifacts (not redistributable)
+docs/generated/
+knowledge-experiments/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*

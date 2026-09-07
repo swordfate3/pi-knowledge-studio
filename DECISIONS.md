@@ -1,5 +1,19 @@
 # Architecture decisions and release notes
 
+## Multimodal redesign — proposed, 2026-09-05
+
+Design-only work on `redesign/multimodal-knowledge-v2`; no runtime or installed knowledge-store changes. Four read-only sub-agents informed the [proposal](docs/multimodal-redesign.md) and [acceptance plan](docs/redesign-validation.md).
+
+- Redesign within this repository; retain selected safety/provenance helpers and the Pi tool shell.
+- Own the multimodal core rather than depend on pi-knowledge's internal, text-centric engine APIs. Do not share its live store.
+- Prefer Node orchestration, a bounded local Python parser worker, SQLite metadata, and immutable content-addressed source/image files.
+- Separate source revisions, parser runs, image bytes, image occurrences, derived observations, index generations, and evidence bundles.
+- Use independent lexical/dense candidates with rank fusion; add reranking or visual indexes only with verified capabilities and measured benefit.
+- Export verified original images or honestly labelled derivatives into portable documents; source identity and offline rendering are hard acceptance gates.
+- Model downloads and real inference are future validation work. Existing remote-service snapshots are not fresh health/resource checks.
+
+The decisions below remain the implemented MVP history; their rejected features do not constrain the redesign. No new capability is shipped by this documentation change.
+
 ## 0.1.0 MVP — current
 
 - **Status:** implemented baseline / MVP.

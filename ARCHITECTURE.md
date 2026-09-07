@@ -1,5 +1,7 @@
 # Architecture
 
+> The sections below describe the implemented **0.1.0 MVP** used by the current Pi tools. A separate experimental [portable-image export slice](docs/portable-export-slice.md) is now implemented, but is not wired into these tools. The broader architecture remains proposed: see [redesign proposal](docs/multimodal-redesign.md), [validation plan](docs/redesign-validation.md), and [visual overview](docs/multimodal-redesign.html).
+
 ## Product boundary
 
 Pi Knowledge Studio is a **generic, profile-driven Pi package**. It provides reusable ingestion, provenance, lexical retrieval, asset storage, optional vision, and Markdown rendering. A profile supplies domain terminology and interpretation guidance; it does not introduce domain-specific storage or algorithms. The built-in FreeRTOS / STM32 profile is an optional demonstration of this mechanism only.

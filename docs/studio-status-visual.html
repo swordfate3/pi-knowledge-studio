@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Studio 做到哪了？一张动态图看懂</title>
+<style>
+:root{color-scheme:dark;--bg:#101727;--panel:#1b263b;--ink:#f1f5ff;--muted:#b9c6dc;--green:#74e5b2;--amber:#ffd180;--blue:#89baff;--red:#ffabad}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}main{max-width:1100px;margin:auto;padding:45px 24px 70px}h1{font-size:clamp(34px,6vw,62px);line-height:1.2;margin:15px 0 22px}h2{font-size:30px;line-height:1.35;margin:0 0 20px}h3{font-size:23px;margin:10px 0}p{margin:10px 0}.muted,small{color:var(--muted)}small{font-size:15px}.eyebrow{color:var(--blue);font-weight:700}.hero{padding-bottom:30px}.summary{font-size:24px;max-width:870px}.green{color:var(--green)}.amber{color:var(--amber)}.red{color:var(--red)}section{margin:25px 0;padding:28px;border:1px solid #34415a;border-radius:24px;background:var(--panel)}.legend,.controls,.stats{display:flex;gap:12px;flex-wrap:wrap}.pill{display:inline-block;border-radius:99px;padding:5px 13px;background:#101727;font-size:16px}.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:26px 0}button{font:inherit;color:inherit;border:1px solid #536783;background:#25344d;border-radius:12px;padding:10px 18px;cursor:pointer}button:hover{background:#304568}button:focus-visible,a:focus-visible{outline:3px solid var(--amber);outline-offset:4px}.step{position:relative;padding:20px 8px;border:2px solid #45536a;min-height:145px;text-align:center;transition:transform .2s,border-color .2s,background .2s}.step .icon{font-size:40px;display:block}.step .name{display:block;font-size:20px;font-weight:700}.step .num{font-size:14px;color:var(--muted)}.step[aria-pressed=true]{border-color:var(--green);background:#213f43;transform:translateY(-5px)}.step.done{border-color:#43866f}.track{height:8px;border-radius:99px;background:#101727;overflow:hidden}.bar{height:100%;width:0;background:var(--green);transition:width .35s}.detail{min-height:245px;margin:24px 0 18px;padding:24px;border-radius:18px;background:#101727;border-left:5px solid var(--green)}.detail h3{font-size:27px}.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}.card{padding:24px;background:#101727;border-radius:18px}.bigicon{font-size:42px}.metric{font-size:40px;font-weight:800;line-height:1.4}.stat{flex:1;min-width:230px;padding:22px;border-radius:18px;background:#101727}.compare{display:grid;grid-template-columns:1fr 1fr;gap:18px}.paper{border:2px solid #58677d;background:#e8eef9;color:#172132;padding:22px;border-radius:12px;min-height:175px}.paper .lines{height:12px;background:#889bb7;border-radius:4px;margin:12px 0;width:85%}.paper .picture{font-size:40px;text-align:center;border:2px dashed #8699b3;margin-top:15px}.note{padding:15px 20px;border-radius:12px;background:#302b24;color:#ffe1ab}.road{display:grid;gap:12px}.road div{padding:15px 20px;background:#101727;border-radius:12px}.road b{color:var(--blue);margin-right:10px}a{color:var(--blue)}footer{margin-top:30px;color:var(--muted);font-size:16px}@media(max-width:700px){main{padding:25px 16px}section{padding:20px}.flow{grid-template-columns:repeat(2,1fr)}.step:last-child{grid-column:1/-1}.cards,.compare{grid-template-columns:1fr}.detail{min-height:300px}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body><main>
+<header class="hero"><div class="eyebrow">PI KNOWLEDGE STUDIO · 进度图解</div><h1>主流程已跑通。<br><span class="amber">还不是完整交付。</span></h1><p class="summary">把它想成一个“会找资料、会拿原图、会写文档”的小图书馆。<br>现在已有能工作的核心，但还没证明它能稳定处理你的各种真实资料。</p><small>根据项目进度记录制作：2026-09-06。下面动画是流程示意，不会调用模型，也不是现场测试。</small></header>
+<section aria-labelledby="flow-title"><h2 id="flow-title">① 一本资料，怎样变成图文答案？</h2><div class="legend"><span class="pill green">● 绿色：已有实现和验证</span><span class="pill amber">● 黄色：有限制／尚待验收</span></div>
+<div class="flow" role="group" aria-label="点击查看各阶段">
+<button class="step" type="button" data-step="0" aria-pressed="true"><span class="num">第 1 站</span><span class="icon" aria-hidden="true">📥</span><span class="name">读资料</span></button>
+<button class="step" type="button" data-step="1" aria-pressed="false"><span class="num">第 2 站</span><span class="icon" aria-hidden="true">🗄️</span><span class="name">存文字和图</span></button>
+<button class="step" type="button" data-step="2" aria-pressed="false"><span class="num">第 3 站</span><span class="icon" aria-hidden="true">🔎</span><span class="name">按问题找</span></button>
+<button class="step" type="button" data-step="3" aria-pressed="false"><span class="num">第 4 站</span><span class="icon" aria-hidden="true">✍️</span><span class="name">组织答案</span></button>
+<button class="step" type="button" data-step="4" aria-pressed="false"><span class="num">第 5 站</span><span class="icon" aria-hidden="true">📖</span><span class="name">带图导出</span></button>
+</div><div class="track" aria-hidden="true"><div class="bar" id="bar"></div></div>
+<div class="detail" id="detail" aria-live="polite" aria-atomic="true"><h3>📥 读资料：先把内容拆出来</h3><p>已能读取文字文件、部分 Markdown／Word／HTML，以及有文字层的 PDF。</p><p class="amber">不是所有排版都能读。扫描版 PDF 还不能识字。</p></div>
+<div class="controls"><button type="button" id="prev">← 上一步</button><button type="button" id="next">下一步 →</button><button type="button" id="play">▶ 自动演示</button><button type="button" id="reset">回到起点</button></div><small>进度条表示动画走到哪一站，不是项目完成百分比。</small></section>
+<section><h2>② 你最关心的：是原图，还是 AI 重新画的？</h2><div class="compare"><div class="paper"><strong>📄 原资料</strong><div class="lines"></div><div class="lines" style="width:60%"></div><div class="picture">🌄 原图片 A</div></div><div class="paper"><strong>📖 导出文档</strong><div class="lines" style="width:65%"></div><div class="lines"></div><div class="picture">🌄 同一张图片 A</div></div></div><p class="green"><strong>支持的 PNG／JPEG／WebP：原始文件保留，不让 AI 重画代替。</strong></p><p>JPEG／WebP 会另备一张便于显示的 PNG，原文件仍在。</p><div class="note">PDF 是例外：目前提取的是部分解码后的图片，并按同一页关联文字；不能保证完整提图，也不能保证保留 PDF 内图片的原始编码字节。</div></section>
+<section><h2>③ 已经用“真机器”试过什么？</h2><div class="stats"><article class="stat"><div class="metric green">6 / 6</div><h3>远程 embedding 找对首条</h3><p>把文字变成“意思坐标”，帮助找到换了说法的内容。</p><small>真实 WeMM，6 组人工编写的中文样例。纯关键词对照是 5/6；样本太小，不能代表总体准确率。</small></article><article class="stat"><div class="metric green">已跑通</div><h3>真实模型写文档＋带原图导出</h3><p>Qwen 已用小样例完成生成与导出，原 PNG 字节一致。</p><small>不是整本教材的质量验收，也不代表每句话都正确。</small></article><article class="stat"><div class="metric green">116 通过</div><h3>共 117 项自动测试</h3><p>另 1 项因环境权限限制跳过。</p><small>能发现很多程序错误，但不能代替真实使用验收。这里引用上次结果，不是刚刚重跑。</small></article></div></section>
+<section><h2>④ 还缺的，不是同一种“没做完”</h2><div class="cards">
+<article class="card"><div class="bigicon" aria-hidden="true">📷</div><span class="pill red">功能未完成</span><h3>让扫描件“能被读懂”</h3><p>扫描 PDF 像一张张照片，还缺识字工具和中英文数据。</p><small>这叫 OCR。依赖下载失败，目前确实被环境卡住。</small></article>
+<article class="card"><div class="bigicon" aria-hidden="true">👁️</div><span class="pill amber">接口已写，真服务未验</span><h3>看图理解、重新排序</h3><p>程序已经能接视觉模型和重排模型，但还没用真实服务完成验收。</p><small>“模拟服务测试通过”不等于“真实模型已可用”。图片描述只帮忙查找，不能冒充原文。</small></article>
+<article class="card"><div class="bigicon" aria-hidden="true">🧑‍💻</div><span class="pill amber">工具已加载，完整操作未验</span><h3>你在 Pi 里亲自用一遍</h3><p>15 个新旧工具能被 Pi 加载；完整交互流程还没验收。</p><small>还要验证：选资料 → 确认授权 → 查询 → 生成 → 打开导出包。</small></article>
+<article class="card"><div class="bigicon" aria-hidden="true">📚</div><span class="pill amber">小样例通过，大规模未验</span><h3>很多资料也能找得准、用得久</h3><p>还缺独立题集评测，以及大量资料下的可靠性验证。</p><small>复杂格式支持、版本迁移、清理不用的存储文件、更强解析隔离等，也未完成。</small></article>
+</div></section>
+<section><h2>⑤ 接下来怎样才算交付，而不是又做一小块？</h2><div class="road"><div><b>1</b>先跑通真正的 Pi 完整操作，不只证明工具能加载。</div><div><b>2</b>用真实视觉／重排服务验证已写好的接口。</div><div><b>3</b>解决 OCR 依赖，让扫描件也能入库。</div><div><b>4</b>用未参与开发的资料出题，检查找得准不准、图对不对。</div><div><b>5</b>补齐长期使用所需的稳定性，再做整体交付验收。</div></div><p class="note">OCR 卡住，不代表其他工作都不能继续。不能再把“一个模块通过测试”当成“整个项目完成”。</p></section>
+<footer><strong>一句话：</strong>已经有能跑的小图书馆，还没成为经过完整验收、可放心处理各种资料的成品。<br>最近记录：代码未提交、未推送；没有子代理继续运行。本页不会启动后台开发。<br>详细依据：<a href="IMPLEMENTATION-PROGRESS.md">实现进度</a> · <a href="v2-usage.md">使用与限制</a> · <a href="retrieval-evaluation.md">检索评测</a></footer>
+</main><script>
+'use strict';
+const stages = [
+['📥 读资料：先把内容拆出来','已能读取文字文件、部分 Markdown／Word／HTML，以及有文字层的 PDF。','不是所有排版都能读。扫描版 PDF 还不能识字。'],
+['🗄️ 存起来：给文字和图片贴来源标签','文字、原图、文档版本和对应关系都能保存在本地；重新打开后还能读取。','这部分已实现。大量资料下的维护、清理和迁移还没完成。'],
+['🔎 找资料：既找相同的词，也找相近的意思','关键词检索与远程 embedding 一起找，再合并结果；返回原文和关联图。','真实 WeMM 小样例已跑通。不是已经证明各种问题都找得准。'],
+['✍️ 写答案：拿找到的资料组织文字','真实 Qwen 已生成过带引用的小样例。程序检查引用是否指向已有证据。','引用存在，不等于内容一定正确；写作模型当前只拿到图片信息，不代表亲眼看过图。'],
+['📖 导出：把答案、原图和来源装在一起','已能导出 Markdown／HTML 和图片，移走后仍能离线阅读。','程序里的小闭环已跑通；在实际 Pi 交互中走完全部步骤，仍未验收。']
+];
+const buttons = [...document.querySelectorAll('[data-step]')];
+const detail = document.getElementById('detail');
+const bar = document.getElementById('bar');
+const play = document.getElementById('play');
+let current = 0;
+let timer = null;
+function show(index) {
+ current = Math.max(0, Math.min(stages.length - 1, index));
+ buttons.forEach((button, i) => { button.setAttribute('aria-pressed', String(i === current)); button.classList.toggle('done', i < current); });
+ bar.style.width = `${current / (stages.length - 1) * 100}%`;
+ const [title, body, caution] = stages[current];
+ const heading = document.createElement('h3'); heading.textContent = title;
+ const paragraph = document.createElement('p'); paragraph.textContent = body;
+ const warning = document.createElement('p'); warning.className = 'amber'; warning.textContent = caution;
+ detail.replaceChildren(heading, paragraph, warning);
+}
+function stop() { if (timer !== null) clearInterval(timer); timer = null; play.textContent = '▶ 自动演示'; }
+buttons.forEach((button, i) => button.addEventListener('click', () => { stop(); show(i); }));
+document.getElementById('prev').addEventListener('click', () => { stop(); show(current - 1); });
+document.getElementById('next').addEventListener('click', () => { stop(); show(current + 1); });
+document.getElementById('reset').addEventListener('click', () => { stop(); show(0); });
+play.addEventListener('click', () => {
+ if (timer !== null) { stop(); return; }
+ if (current === stages.length - 1) show(0);
+ play.textContent = '⏸ 暂停演示';
+ timer = setInterval(() => { show(current + 1); if (current === stages.length - 1) stop(); }, 5500);
+});
+document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
+show(0);
+</script></body></html>

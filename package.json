@@ -23,11 +23,13 @@
     "DECISIONS.md",
     "LICENSE",
     "config",
-    "docs"
+    "docs",
+    "scripts/verify-collection.mjs"
   ],
   "pi": {
     "extensions": [
-      "./extensions/index.ts"
+      "./extensions/index.ts",
+      "./extensions/v2.ts"
     ]
   },
   "dependencies": {
@@ -41,6 +43,7 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "optionalDependencies": {
+    "sharp": "^0.35.4",
     "unpdf": "^1.8.1"
   },
   "devDependencies": {
