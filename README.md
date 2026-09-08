@@ -58,7 +58,7 @@ At the API level, the main flow is: `loadConfig(cwd)` → choose `getProfile(id)
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `PI_KNOWLEDGE_STUDIO_HOME` | Overrides the data root; resolved to an absolute path | project scope: `.pi/knowledge-studio` |
+| `PI_KNOWLEDGE_STUDIO_HOME` | Overrides the data root; resolved to an absolute path | project scope: `.pi/knowledge-studio/legacy-v1` |
 | `PI_KNOWLEDGE_STUDIO_PROFILE` | Default profile ID | `general` |
 | `PI_KNOWLEDGE_STUDIO_MAX_CHUNK_CHARS` | Positive maximum chunk size | `1800` |
 | `PI_KNOWLEDGE_STUDIO_CHUNK_OVERLAP_CHARS` | Positive chunk overlap, capped below chunk size | `200` |
@@ -77,7 +77,7 @@ At the API level, the main flow is: `loadConfig(cwd)` → choose `getProfile(id)
 
 ## V1 data and safety boundaries
 
-The default project data directory is `.pi/knowledge-studio`; global scope uses the user's Pi data area (`~/.pi/knowledge-studio`). A configured home wins. Collections contain JSON manifests/data and copied assets. Keep the data directory private, add it to backups only intentionally, and do not put credentials in it.
+The default V1 project data directory is `.pi/knowledge-studio/legacy-v1`; explicit standalone global scope uses the user's Pi data area (`~/.pi/knowledge-studio`). A configured home wins. Collections contain JSON manifests/data and copied assets. Keep the data directory private, add it to backups only intentionally, and do not put credentials in it.
 
 Treat both the source and output paths as sensitive: ingestion reads local files and may copy referenced assets; vision sends selected image bytes and the prompt to the configured endpoint. Use least-privilege directories, review collection output before sharing, and never point ingestion at secrets, credentials, private books, or an entire home directory. The package does not sanitize material for publication.
 
@@ -95,3 +95,5 @@ Do not package sensitive material: do not commit `.env` files, API keys, private
 ## Durable whole-PDF jobs
 
 See [automatic paged PDF ingest and resumable embedding](docs/durable-pdf-jobs.md) for the additive `ks_v2_pdf_start/resume/status/search` workflow, host quotas, isolation from incomplete books, and current limitations.
+
+All default project Studio persistence is under `.pi/knowledge-studio/`: `collections/` (V2), `pdf-jobs/`, `pdf-generations/` (including model profile registry), `exports/`, and `legacy-v1/` (V1 JSON collections). `PI_KNOWLEDGE_STUDIO_HOME` overrides **V1 only**; it is not a V2 or global-default switch. See [storage layout and upgrade instructions](docs/storage-layout.md).

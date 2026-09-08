@@ -6,7 +6,7 @@ This directory documents deployment and environment choices for the generic, pro
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `PI_KNOWLEDGE_STUDIO_HOME` | Absolute data-root override | `.pi/knowledge-studio` in project scope |
+| `PI_KNOWLEDGE_STUDIO_HOME` | Absolute data-root override | `.pi/knowledge-studio/legacy-v1` in project scope |
 | `PI_KNOWLEDGE_STUDIO_PROFILE` | Default profile ID | `general` |
 | `PI_KNOWLEDGE_STUDIO_MAX_CHUNK_CHARS` | Positive chunk-size limit | `1800` |
 | `PI_KNOWLEDGE_STUDIO_CHUNK_OVERLAP_CHARS` | Positive overlap, bounded below chunk size | `200` |
@@ -27,10 +27,12 @@ Invalid or missing positive integer values fall back to the defaults. Vision req
 
 ## Data directory
 
-`loadConfig(cwd)` uses `.pi/knowledge-studio` under the current project by default. Global callers can use the user's Pi data area, and `PI_KNOWLEDGE_STUDIO_HOME` takes precedence. Collections are stored as JSON under `collections/<safe-name>/`, with copied local assets below that collection's `assets/` directory.
+`loadConfig(cwd)` uses `.pi/knowledge-studio/legacy-v1` under the current project by default. Global callers can use the user's Pi data area, and `PI_KNOWLEDGE_STUDIO_HOME` takes precedence. Collections are stored as JSON under `collections/<safe-name>/`, with copied local assets below that collection's `assets/` directory.
 
 Keep the source and output directories private and separate where practical. Ingestion reads local source files and may copy referenced images. Optional vision sends selected image bytes and a prompt to the configured endpoint. Never ingest credentials, private books, or broad home-directory trees, and review output before sharing.
 
 ## Configuration hygiene
 
 Use a local, untracked environment or process manager. Never commit API keys, `.env` files, private documents, generated collections, downloaded models, or book paths. The ignore rules help but are not a security boundary.
+
+All default project Studio persistence is under `.pi/knowledge-studio/`: `collections/` (V2), `pdf-jobs/`, `pdf-generations/` (including model profile registry), `exports/`, and `legacy-v1/` (V1 JSON collections). `PI_KNOWLEDGE_STUDIO_HOME` overrides **V1 only**; it is not a V2 or global-default switch. See [storage layout and upgrade instructions](../docs/storage-layout.md).

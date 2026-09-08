@@ -5,7 +5,7 @@ This is an operational **PDF-only vertical slice**, not completion of the ordina
 ## Storage and identities
 
 - Existing `native-pdf-job-v1` stores remain unchanged, including their exact SQLite schema. `PdfJobs.inspect()` adds metadata-only and individually budgeted vector visitors, not a schema migration.
-- New store: `<cwd>/.pi/knowledge-studio-v2-pdf-generations/registry.sqlite`, version `pdf-generations-v1` with exact schema validation. Linux only; private owner-controlled root 0700 and files 0600. Unsafe modes, symlinks, hardlinks, unexpected schemas and oversized records fail closed. **No automatic chmod.**
+- New store: `<cwd>/.pi/knowledge-studio/pdf-generations/registry.sqlite`, version `pdf-generations-v1` with exact schema validation. Linux only; private owner-controlled root 0700 and files 0600. Unsafe modes, symlinks, hardlinks, unexpected schemas and oversized records fail closed. **No automatic chmod.**
 - Each imported book has one UUID capture directory containing a validated private copy of the old PDF, database and lock file. Text/windows and original image blobs are shared across its generations, not recaptured per rebuild. The original legacy vector rows remain in that copy as well.
 - Registry holds immutable profile revisions, selected default, per-book active generation plus monotonically increasing epoch, generation checkpoints and fenced run leases. Vectors are keyed by **generation ID and batch ordinal**, not merely by embedding-space identity.
 - Exact vector identity is `[provider, model, revision, dimension, queryInstruction, documentInstruction]`. Profile HTTP identity includes `provider|kind|new URL(endpoint).href`. Imported ready indexes retain their original complete identity verbatim; it is not reconstructed or normalized.
@@ -75,3 +75,5 @@ Final full log: `/tmp/pdf-fixes-full-final.log` (also passed in `/tmp/pdf-fixes-
 No production endpoints, private knowledge bases or actual book stores were used for this slice.
 
 Review regressions additionally cover predispatch stop and shared SQLite entry lock, postdispatch fencing, failed-COMMIT pending rejection, malformed synthetic credential Request repro and transport causes through tools, metadata-only inspection and many-batch preallocation rejection, concurrent initialization and SIGKILL file-created/schema-before-row faults, whitespace lexical misses, and explicit exact-space legacy profile association. These offline synthetic checks do not certify whole-product completion or power-loss durability.
+
+Storage upgrade: see [project layout and manual migration](storage-layout.md). Old roots are never moved automatically.

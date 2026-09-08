@@ -682,6 +682,7 @@ export async function runSmoke({
     }
     assert.equal(generated.generatedByModel, true);
     assert.equal(generated.semanticProof, false);
+    assert.ok(generated.path.startsWith(join(cwd, ".pi", "knowledge-studio", "exports") + "/"));
     const generatedPackage = await verifyPackage(generated.path, original);
     const beforeExportDeny = await snapshot(cwd);
     await call(
@@ -696,6 +697,7 @@ export async function runSmoke({
       { query: "synthetic semaphore", output: "evidence" },
       ["export"],
     );
+    assert.ok(exported.path.startsWith(join(cwd, ".pi", "knowledge-studio", "exports") + "/"));
     const evidencePackage = await verifyPackage(exported.path, original);
     await rpc.close();
     rpc = new Rpc(cli, cwd, env, record);

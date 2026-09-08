@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -219,7 +219,7 @@ test("generation approves actual bundle before egress and all sharing before exp
     [180000],
   );
   assert.equal(
-    (await readdir(join(cwd, "knowledge-studio-v2-exports", "report"))).length,
+    (await readdir(join(cwd, ".pi", "knowledge-studio", "exports", "report"))).length,
     1,
   );
 });
@@ -325,7 +325,7 @@ test("generation denial and source epoch changes prevent model egress", async (t
       context(cwd, async (title) => {
         if (title.endsWith("generate")) {
           const kb = new KnowledgeRuntime(
-            join(cwd, ".pi", "knowledge-studio-v2", "demo"),
+            join(cwd, ".pi", "knowledge-studio", "collections", "demo"),
           );
           await kb.remove((await kb.list())[0]!.id);
         }
@@ -467,7 +467,7 @@ test("source changes after model response block export", async (t) => {
   const ctx = context(cwd, async (title) => {
     if (title.endsWith("export")) {
       const kb = new KnowledgeRuntime(
-        join(cwd, ".pi", "knowledge-studio-v2", "demo"),
+        join(cwd, ".pi", "knowledge-studio", "collections", "demo"),
       );
       await kb.remove((await kb.list())[0]!.id);
     }
@@ -524,7 +524,7 @@ test("source changes after model response block export", async (t) => {
     /Sources changed during generation/,
   );
   assert.deepEqual(
-    await readdir(join(cwd, "knowledge-studio-v2-exports", "report")),
+    await readdir(join(cwd, ".pi", "knowledge-studio", "exports", "report")),
     [],
   );
 });
@@ -675,7 +675,7 @@ async function enrichmentFixture(cwd: string) {
     context(cwd),
   );
   const kb = new KnowledgeRuntime(
-    join(cwd, ".pi", "knowledge-studio-v2", "demo"),
+    join(cwd, ".pi", "knowledge-studio", "collections", "demo"),
   );
   const documentId = (await kb.list())[0]!.id;
   const result = await invoke(
@@ -1232,6 +1232,8 @@ test("HTML changed after preflight still enforces source policy before publishin
     const result = await invoke(tools, "ks_v2_pdf_start", { path: "book.pdf" }, context(cwd));
     const text = result.content.find(c => c.type === "text"); assert.ok(text?.type === "text");
     const m = JSON.parse(text.text); assert.equal(m.state, "parsed"); assert.equal(m.space, null);
+    assert.ok((await readdir(join(cwd, ".pi", "knowledge-studio"))).includes("pdf-jobs"));
+    assert.ok(!(await readdir(join(cwd, ".pi"))).includes("knowledge-studio-v2-pdf-jobs"));
     await invoke(tools, "ks_v2_pdf_status", { bookId: m.bookId }, context(cwd));
     await assert.rejects(invoke(tools, "ks_v2_pdf_search", { bookId: m.bookId, query: "synthetic" }, context(cwd)), /incomplete/);
     await assert.rejects(invoke(tools, "ks_v2_pdf_resume", { bookId: m.bookId, index: true }, context(cwd)), /index denied/);
@@ -1254,7 +1256,7 @@ test("PDF profile tools persist revisions and egress denial leaves shadow paused
   const old = new PdfJobs(join(cwd, "legacy")); const m = await old.start(cwd, join(cwd, "source.pdf")); await old.resume(m.bookId);
   await invoke(tools, "ks_v2_pdf_migrate", { legacyRoot: "legacy", bookId: m.bookId }, approved);
   await invoke(tools, "ks_v2_pdf_reindex", { bookId: m.bookId }, approved);
-  const store = new PdfGenerations(join(cwd, ".pi", "knowledge-studio-v2-pdf-generations"));
+  const store = new PdfGenerations(join(cwd, ".pi", "knowledge-studio", "pdf-generations"));
   const g = (await store.status(m.bookId)).generations[0]!;
   await assert.rejects(invoke(tools, "ks_v2_pdf_generation_resume", { generationId: g.id }, context(cwd, async (_title, message) => !message.includes("Send PDF text"))));
   assert.equal((await store.generationSnapshot(g.id)).state, "paused");
@@ -1275,7 +1277,7 @@ test("legacy hybrid tool requires separate association and redacts host transpor
   const old = new PdfJobs(join(cwd, "legacy")), m = await old.start(cwd, join(cwd, "source.pdf"));
   await old.resume(m.bookId, { provider: { space: profileSpace(profile), async embed(texts) { return texts.map(() => [1, 2]); } } });
   await invoke(tools, "ks_v2_pdf_migrate", { legacyRoot: "legacy", bookId: m.bookId }, approved);
-  const store = new PdfGenerations(join(cwd, ".pi", "knowledge-studio-v2-pdf-generations")), a = (await store.status(m.bookId)).book.active!;
+  const store = new PdfGenerations(join(cwd, ".pi", "knowledge-studio", "pdf-generations")), a = (await store.status(m.bookId)).book.active!;
   const query = { bookId: m.bookId, query: "synthetic", mode: "hybrid" };
   await assert.rejects(invoke(tools, "ks_v2_pdf_generation_search", query, approved), /no credential profile/);
   const association = { generationId: a, profileId: "local", profileRevision: 1 };
@@ -1289,4 +1291,23 @@ test("legacy hybrid tool requires separate association and redacts host transpor
   await invoke(good, "ks_v2_pdf_generation_search", query, approved); assert.equal(network.mock.callCount(), 1);
   network.mock.mockImplementation(async () => { throw new Error("secret-marker", { cause: new Error("secret-marker") }); });
   await assert.rejects(invoke(good, "ks_v2_pdf_generation_search", query, approved), (error: unknown) => { assert.ok(error instanceof Error); assert.equal(error.message, "Profile embedding request failed"); assert.equal(error.cause, undefined); return true; });
+});
+
+
+test("legacy root blocks extension storage without creating a replacement", async t => {
+  const cwd = await mkdtemp(join(tmpdir(), "ks-old-layout-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  await mkdir(join(cwd, ".pi", "knowledge-studio-v2"), { recursive: true, mode: 0o700 });
+  await assert.rejects(invoke(register({ PI_KS_V2_HEADLESS_GRANTS: "list" }), "ks_v2_list", { collection: "demo" }, context(cwd)), /Legacy Studio storage detected/);
+  assert.deepEqual(await readdir(join(cwd, ".pi")), ["knowledge-studio-v2"]);
+});
+
+test("all new Studio children are excluded as source input", async t => {
+  const cwd = await mkdtemp(join(tmpdir(), "ks-layout-source-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const tools = register({ PI_KS_V2_HEADLESS_GRANTS: "import" });
+  for (const child of ["collections", "pdf-jobs", "pdf-generations", "exports", "legacy-v1"]) {
+    await assert.rejects(invoke(tools, "ks_v2_import", { collection: "demo", path: `.pi/knowledge-studio/${child}/source.md` }, context(cwd)), /excludes/);
+  }
+  assert.deepEqual(await readdir(cwd), []);
 });

@@ -1,3 +1,4 @@
+import { checkedStudioPaths } from "./core/studio-paths.ts";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -33,7 +34,7 @@ export function resolveDataRoot(
   if (configured) return resolve(configured);
   return scope === "global"
     ? join(homedir(), ".pi", "knowledge-studio")
-    : join(cwd, ".pi", "knowledge-studio");
+    : checkedStudioPaths(cwd).legacyV1;
 }
 
 export function loadConfig(cwd: string): StudioConfig {

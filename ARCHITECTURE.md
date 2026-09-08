@@ -34,7 +34,7 @@ The exported API is assembled by `src/index.ts`. Responsibilities are separated 
 
 ## Storage and boundaries
 
-The data root defaults to `.pi/knowledge-studio` for project scope or the user's Pi data area for global scope; `PI_KNOWLEDGE_STUDIO_HOME` overrides it. Collections are keyed under `collections/<safe-name>/`, with `collection.json` and an `assets/` directory. Writes use a temporary file followed by rename. Source URIs and stored asset paths remain part of provenance, so output must be reviewed before sharing.
+The V1 data root defaults to `.pi/knowledge-studio/legacy-v1` for project scope; explicit standalone global scope retains the user's Pi data area, and `PI_KNOWLEDGE_STUDIO_HOME` overrides V1 only. V1 collections are keyed under `collections/<safe-name>/`, with `collection.json` and an `assets/` directory. Writes use a temporary file followed by rename. Source URIs and stored asset paths remain part of provenance, so output must be reviewed before sharing.
 
 The source boundary is local filesystem input. Supported discovery includes Markdown, text, RST, HTML, JSON, CSV, and PDF paths; Markdown and HTML can reference local images that are copied. Network image URLs are not fetched. PDF extraction is optional and text-focused; absent support produces a warning rather than complete OCR. Vision is the only outbound content path and is explicitly configured by the caller.
 
@@ -56,3 +56,5 @@ These validate TypeScript and execute available tests; they do not establish OCR
 ## Security posture
 
 Do not ingest credentials, private books, secrets, or broad home-directory trees. Keep `.env` and generated collection data out of commits, use least-privilege source/output directories, and understand that enabling vision sends selected image data to the configured endpoint. See [config/README.md](config/README.md) and [README.md](README.md) for operational details.
+
+Default V2 stores share the project `.pi/knowledge-studio/` umbrella, with `collections/`, `pdf-jobs/`, `pdf-generations/` (including the model-profile registry), and `exports/`. The shared resolver is `src/core/studio-paths.ts`; explicit runtime roots remain caller-controlled. See [storage layout and offline upgrade](docs/storage-layout.md).

@@ -71,7 +71,7 @@ async function fixture(t: test.TestContext) {
   await writeFile(join(cwd, "image.png"), encodePng(1, 1, 3, Buffer.from([1, 2, 3])));
   await writeFile(join(cwd, "input.md"), "Hello evidence.\n\n![captured caption](image.png)");
   await invoke(tools, "ks_v2_import", { collection: "demo", path: "input.md" }, context(cwd, async () => true));
-  const kb = new KnowledgeRuntime(join(cwd, ".pi", "knowledge-studio-v2", "demo"));
+  const kb = new KnowledgeRuntime(join(cwd, ".pi", "knowledge-studio", "collections", "demo"));
   return { cwd, tools, kb };
 }
 function wire(bundle: { texts: { id: string }[] }, insufficient = false) {
@@ -107,7 +107,7 @@ test("registered generation sends exact disclosed question/bundle/host links and
   assert.equal((result.details as Record<string, unknown>).generatedByModel, true);
   assert.equal((result.details as Record<string, unknown>).semanticProof, false);
   assert.deepEqual(approvals, ["search", "generate", "export"]);
-  assert.equal((await readdir(join(cwd, "knowledge-studio-v2-exports", "report"))).length, 1);
+  assert.equal((await readdir(join(cwd, ".pi", "knowledge-studio", "exports", "report"))).length, 1);
 });
 
 test("insufficient model judgment and exact empty retrieval return assessment without export or output writes", async t => {
@@ -124,7 +124,7 @@ test("insufficient model judgment and exact empty retrieval return assessment wi
   }
   assert.equal(network.mock.callCount(), 1);
   assert.deepEqual(approvals, ["search", "generate", "search"]);
-  assert.ok(!(await readdir(cwd)).includes("knowledge-studio-v2-exports"));
+  assert.ok(!(await readdir(join(cwd, ".pi", "knowledge-studio"))).includes("exports"));
   for (const message of ["database failed", "timeout", "No relevant evidence found: timeout"]) {
     const mocked = t.mock.method(KnowledgeRuntime.prototype, "search", async () => { throw new Error(message); });
     await assert.rejects(invoke(tools, "ks_v2_generate", params, ctx), { message });
@@ -146,8 +146,8 @@ test("denials and epoch changes gate new generation and export", async t => {
       return stage !== `deny-${title.split(": ")[1]}`;
     })), /denied|Sources changed during generation/);
     assert.equal(network.mock.callCount(), ["deny-search", "deny-generate", "epoch-generate"].includes(stage) ? 0 : 1);
-    if ((await readdir(cwd)).includes("knowledge-studio-v2-exports"))
-      assert.deepEqual(await readdir(join(cwd, "knowledge-studio-v2-exports", "report")), []);
+    if ((await readdir(join(cwd, ".pi", "knowledge-studio"))).includes("exports"))
+      assert.deepEqual(await readdir(join(cwd, ".pi", "knowledge-studio", "exports", "report")), []);
     network.mock.restore();
   }
 });
@@ -187,7 +187,7 @@ test("none and required policies reach the new protocol; unsupported required fi
   const result = await invoke(tools, "ks_v2_generate", { ...params, figurePolicy: policy, output: "unused" }, ctx);
   assert.equal((result.details as Record<string, unknown>).status, "insufficient-evidence");
   assert.deepEqual((result.details as Record<string, unknown>).reasons, ["required-figure-missing"]);
-  assert.deepEqual(await readdir(join(cwd, "knowledge-studio-v2-exports")), ["report"]);
+  assert.deepEqual(await readdir(join(cwd, ".pi", "knowledge-studio", "exports")), ["report"]);
   assert.equal(network.mock.callCount(), 2);
 });
 

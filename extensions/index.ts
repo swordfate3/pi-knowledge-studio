@@ -1,3 +1,4 @@
+import { studioPaths } from "../src/core/studio-paths.ts";
 import type {
   AgentToolUpdateCallback,
   ExtensionAPI,
@@ -109,6 +110,9 @@ function checkedInputPath(cwd: string, input: string): string {
     isAbsolute(outsideProject)
   )
     throw new Error("path must stay inside the project cwd.");
+  const storage = relative(studioPaths(cwd).root, path);
+  if (!storage || (!storage.startsWith(`..${sep}`) && storage !== ".." && !isAbsolute(storage)))
+    throw new Error("Source must be outside Studio persistent storage.");
   return path;
 }
 

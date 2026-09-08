@@ -25,7 +25,7 @@ ks_v2_pdf_search {"bookId":"book_<source SHA-256>","query":"scheduler","mode":"h
 
 ## Storage and quotas
 
-Linux/POSIX only for this route. Store: `.pi/knowledge-studio-v2-pdf-jobs/`, owner-only directory and regular files. Descriptor-relative ancestor traversal and no-follow leaf opens reject symlinks; spool/database paths are derived exclusively from validated hashes. SQLite uses FULL synchronous rollback journaling. Existing databases (including the lock DB) must match the exact v1 schema allowlist, with no unexpected tables, indexes, triggers or views, before application reads/writes; only newly created empty databases are initialized. SQLite journal recovery remains allowed. SQL-side byte-length/type predicates reject oversized JSON, checksum fields and image BLOBs before returning values to JavaScript. Physical database size and 4096-byte page configuration are checked before checkpoint verification. Manifest/window/vector validation fails closed; corruption is not repaired by deleting previous jobs. An orphan spool can be reused only after hashing against the incoming source.
+Linux/POSIX only for this route. Store: `.pi/knowledge-studio/pdf-jobs/`, owner-only directory and regular files. Descriptor-relative ancestor traversal and no-follow leaf opens reject symlinks; spool/database paths are derived exclusively from validated hashes. SQLite uses FULL synchronous rollback journaling. Existing databases (including the lock DB) must match the exact v1 schema allowlist, with no unexpected tables, indexes, triggers or views, before application reads/writes; only newly created empty databases are initialized. SQLite journal recovery remains allowed. SQL-side byte-length/type predicates reject oversized JSON, checksum fields and image BLOBs before returning values to JavaScript. Physical database size and 4096-byte page configuration are checked before checkpoint verification. Manifest/window/vector validation fails closed; corruption is not repaired by deleting previous jobs. An orphan spool can be reused only after hashing against the incoming source.
 
 Host-only settings (positive safe integers, snapshotted when the extension loads):
 
@@ -68,3 +68,5 @@ supports explicit non-destructive v1 import, immutable model revisions, durable
 shadow rebuilding and CAS activation/rollback. Existing v1 tools/schema are not
 redirected or migrated in place. The new path has synthetic-test evidence only;
 the earlier real-book measurements do not certify this new generation store.
+
+Storage upgrade: see [project layout and manual migration](storage-layout.md). Old roots are never moved automatically.

@@ -1,3 +1,4 @@
+import { checkedStudioPaths } from "../src/core/studio-paths.ts";
 import { PdfGenerations, profileProvider } from "../src/application/pdf-generation-store.ts";
 import { PdfJobs, DEFAULT_PDF_JOB_LIMITS } from "../src/application/pdf-jobs.ts";
 import { OCR_WARNING } from "../src/domain/ocr.ts";
@@ -84,7 +85,6 @@ const modeSchema = Type.Optional(
     enum: ["lexical", "hybrid"],
   }),
 );
-const exportBase = "knowledge-studio-v2-exports";
 type Grant =
   | "ocr"
   | "import"
@@ -248,7 +248,7 @@ export default function v2(pi: ExtensionAPI): void {
     if (!namePattern.test(collection))
       throw new Error("Invalid collection name");
     const cwd = resolve(ctx.cwd);
-    const base = join(cwd, ".pi", "knowledge-studio-v2");
+    const base = checkedStudioPaths(cwd).collections;
     const root = join(base, collection);
     if (!create) await assertNoSymlinkPath(cwd, root);
     await privateDirectory(cwd, base);
@@ -437,7 +437,7 @@ export default function v2(pi: ExtensionAPI): void {
     operation: () => Promise<T>,
   ): Promise<T> {
     return withFileMutationQueue(
-      join(resolve(ctx.cwd), ".pi", "knowledge-studio-v2"),
+      checkedStudioPaths(ctx.cwd).root,
       async () => {
         signal.throwIfAborted();
         const value = await operation();
@@ -455,12 +455,12 @@ export default function v2(pi: ExtensionAPI): void {
       if (raw !== undefined && (!/^[1-9][0-9]*$/.test(raw) || !Number.isSafeInteger(Number(raw)))) throw new Error(`Invalid host ${key}`);
       return raw === undefined ? fallback : Number(raw);
     };
-    return new PdfJobs(join(resolve(ctx.cwd), ".pi", "knowledge-studio-v2-pdf-jobs"), {
+    return new PdfJobs(checkedStudioPaths(ctx.cwd).pdfJobs, {
       maxInputBytes: quota("PI_KS_V2_PDF_MAX_INPUT_BYTES", DEFAULT_PDF_JOB_LIMITS.maxInputBytes),
       maxStorageBytes: quota("PI_KS_V2_PDF_MAX_STORAGE_BYTES", DEFAULT_PDF_JOB_LIMITS.maxStorageBytes),
     });
   }
-  const generations = (ctx: ExtensionContext) => new PdfGenerations(join(resolve(ctx.cwd), ".pi", "knowledge-studio-v2-pdf-generations"), pdfJobs(ctx).quotas);
+  const generations = (ctx: ExtensionContext) => new PdfGenerations(checkedStudioPaths(ctx.cwd).pdfGenerations, pdfJobs(ctx).quotas);
   const profileSchema = Type.Object({
     id: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
     endpoint: Type.String({ maxLength: 2048 }), kind: Type.Unsafe<"openai" | "wemm">({ type: "string", enum: ["openai", "wemm"] }),
@@ -783,7 +783,7 @@ export default function v2(pi: ExtensionAPI): void {
     name: "ks_v2_export",
     label: "V2 evidence export",
     description:
-      "Compile retrieved evidence deterministically into portable Markdown/HTML plus original PNG/JPEG/WebP assets plus PNG renditions and provenance. NOT model generation or byte-identical packaging (IDs vary). Output is cwd/knowledge-studio-v2-exports/<output>/<unique package>; requires trusted full-content/image/excerpt approval. Optional rerank requires separate approval to send query and up to 30 native capture or unverified OCR candidate texts.",
+      "Compile retrieved evidence deterministically into portable Markdown/HTML plus original PNG/JPEG/WebP assets plus PNG renditions and provenance. NOT model generation or byte-identical packaging (IDs vary). Output is cwd/.pi/knowledge-studio/exports/<output>/<unique package>; requires trusted full-content/image/excerpt approval. Optional rerank requires separate approval to send query and up to 30 native capture or unverified OCR candidate texts.",
     parameters: Type.Object({
       collection: collectionSchema,
       query: querySchema,
@@ -797,7 +797,7 @@ export default function v2(pi: ExtensionAPI): void {
         if (!namePattern.test(params.output))
           throw new Error("Invalid output directory name");
         const cwd = resolve(ctx.cwd),
-          base = join(cwd, exportBase),
+          base = checkedStudioPaths(cwd).exports,
           output = join(base, params.output);
         await approve(
           ctx,
@@ -923,7 +923,7 @@ export default function v2(pi: ExtensionAPI): void {
         }
         const document = answer.document;
         const cwd = resolve(ctx.cwd),
-          base = join(cwd, exportBase),
+          base = checkedStudioPaths(cwd).exports,
           output = join(base, params.output);
         await approve(
           ctx,
