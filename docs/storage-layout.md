@@ -1,17 +1,18 @@
-# Project storage layout and upgrade
+# Studio storage layout and upgrade
 
-All default persistent Studio data is project-relative, not home-global:
+V2 persistent Studio data defaults to the user's private Pi directory, not the project checkout:
 
 ```text
-<cwd>/.pi/knowledge-studio/
+~/.pi/knowledge-studio/       # /root/.pi/knowledge-studio/ in the standard container
   collections/<collection>/   # V2 SQLite catalog, blobs, vectors, hints
   pdf-jobs/                   # durable whole-PDF spools and checkpoints
   pdf-generations/            # registry.sqlite, captures, index generations
   exports/<output>/<package>/ # generated and deterministic portable documents
-  legacy-v1/collections/      # incompatible V1 JSON manifests and copied assets
 ```
 
-PDF model profiles and their selected default remain in `pdf-generations/registry.sqlite`, with immutable revisions and credential **environment references**, not API keys. Moving this directory intact preserves profile/index identity. V1 extraction profiles are shipped source/config, not a mutable model registry. Host environment configuration and Pi's own settings remain host-managed, not copied into Studio. Standalone runtime constructors and explicit export paths are unchanged. The V1 `PI_KNOWLEDGE_STUDIO_HOME` override and explicit `resolveDataRoot(cwd, "global")` retain their previous meaning; neither changes V2 defaults. No default switches to a shared home store.
+Set `PI_KS_V2_DATA_DIR` to an **absolute** private directory before starting Pi to override this V2 root. The value is captured when the extension registers. V1 remains separate and project-relative at `<cwd>/.pi/knowledge-studio/legacy-v1/`; `PI_KNOWLEDGE_STUDIO_HOME` and `resolveDataRoot(cwd, "global")` retain their V1 meanings and do not change the V2 default. `/root/.pi/knowledge` is an unrelated legacy Pi knowledge store, not a Studio root.
+
+PDF model profiles and their selected default remain in `pdf-generations/registry.sqlite`, with immutable revisions and credential **environment references**, not API keys. Moving this directory intact preserves profile/index identity. V1 extraction profiles are shipped source/config, not a mutable model registry. Host environment configuration and Pi's own settings remain host-managed, not copied into Studio. Standalone runtime constructors and explicit export paths are unchanged. Existing project-local V2 data is never silently moved, merged, deleted, embedded, or reindexed.
 
 The extension uses the shared resolver in `src/core/studio-paths.ts`. V2's mutation queue is keyed by the umbrella root. Existing permission, no-follow and containment checks still apply to child stores; new exports are hidden from source ingestion along with the entire `.pi` tree. The old external export directory remains excluded from V2 inputs too.
 
@@ -25,11 +26,11 @@ No automatic move, deletion, merge, schema conversion, embedding, or reindex is 
 
 | Old source | New destination |
 | --- | --- |
-| `.pi/knowledge-studio/collections` containing V1 `collection.json` / `manifest.json` | `.pi/knowledge-studio/legacy-v1/collections` |
-| `.pi/knowledge-studio-v2` | `.pi/knowledge-studio/collections` |
-| `.pi/knowledge-studio-v2-pdf-jobs` | `.pi/knowledge-studio/pdf-jobs` |
-| `.pi/knowledge-studio-v2-pdf-generations` | `.pi/knowledge-studio/pdf-generations` |
-| `knowledge-studio-v2-exports` | `.pi/knowledge-studio/exports` |
+| `<cwd>/.pi/knowledge-studio/collections` containing V1 `collection.json` / `manifest.json` | `<cwd>/.pi/knowledge-studio/legacy-v1/collections` |
+| `<cwd>/.pi/knowledge-studio-v2` | `~/.pi/knowledge-studio/collections` |
+| `<cwd>/.pi/knowledge-studio-v2-pdf-jobs` | `~/.pi/knowledge-studio/pdf-jobs` |
+| `<cwd>/.pi/knowledge-studio-v2-pdf-generations` | `~/.pi/knowledge-studio/pdf-generations` |
+| `<cwd>/knowledge-studio-v2-exports` | `~/.pi/knowledge-studio/exports` |
 
 4. With writers stopped and destinations absent, create the private umbrella/`legacy-v1` parent as needed and relocate each **whole directory** to its exact destination using your filesystem's no-clobber operation. Do not move the old V1 umbrella into its own descendant. V1 stored asset paths are relative to its data root: moving `collections/` intact under `legacy-v1/` preserves them. Do not split the PDF registry from its relative capture directories. Do not edit IDs, hashes, vectors or database schemas.
 5. Keep verified backups outside the recognized old paths: leaving even an empty old sibling directory intentionally continues to block defaults. Retire those old path names only as an explicit operator action after verification. Empty old V1 `collections/` has no JSON marker/data to migrate; an existing empty destination still requires operator inspection before relocation.

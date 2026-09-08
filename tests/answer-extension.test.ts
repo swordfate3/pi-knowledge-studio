@@ -35,6 +35,9 @@ function register(env: Record<string, string> = {}) {
   }
   return tools;
 }
+function registerFor(cwd: string, env: Record<string, string> = {}) {
+  return register({ ...env, PI_KS_V2_DATA_DIR: join(cwd, ".pi", "knowledge-studio") });
+}
 function context(
   cwd: string,
   confirm?: (title: string, message: string) => Promise<boolean>,
@@ -67,7 +70,7 @@ const params = { collection: "demo", query: "Hello", title: "Different display t
 async function fixture(t: test.TestContext) {
   const cwd = await mkdtemp(join(tmpdir(), "answer-extension-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const tools = register(modelEnv);
+  const tools = registerFor(cwd, modelEnv);
   await writeFile(join(cwd, "image.png"), encodePng(1, 1, 3, Buffer.from([1, 2, 3])));
   await writeFile(join(cwd, "input.md"), "Hello evidence.\n\n![captured caption](image.png)");
   await invoke(tools, "ks_v2_import", { collection: "demo", path: "input.md" }, context(cwd, async () => true));
@@ -199,7 +202,7 @@ const controlEnv = {
 };
 test("host controls are snapshotted, disclosed without secrets, never overridden by tool args, and require consent", async t => {
   const { cwd } = await fixture(t);
-  const tools = register({ ...modelEnv, ...controlEnv, PI_KS_V2_GENERATE_API_KEY: "secret-fixture-key" });
+  const tools = registerFor(cwd, { ...modelEnv, ...controlEnv, PI_KS_V2_GENERATE_API_KEY: "secret-fixture-key" });
   const network = t.mock.method(globalThis, "fetch", async (_url: string | URL | Request, init?: RequestInit) => {
     const request = JSON.parse(String(init?.body));
     assert.deepEqual(Object.keys(request).sort(), ["chat_template_kwargs", "max_tokens", "messages", "model", "reasoning_budget_tokens", "response_format"]);
@@ -240,7 +243,7 @@ test("malformed, orphaned and unsupported host controls reject before any retrie
     ...["", "-1", "00", "0.0", "32769", "Infinity"].map(value => ({ ...controlEnv, PI_KS_V2_GENERATE_REASONING_BUDGET_TOKENS: value })),
   ];
   for (const env of invalid) {
-    const tools = register({ ...modelEnv, ...env });
+    const tools = registerFor(cwd, { ...modelEnv, ...env });
     await assert.rejects(invoke(tools, "ks_v2_generate", { ...params, mode: "hybrid", rerank: true }, context(cwd, async () => { throw new Error("unexpected approval"); })), /generation/);
   }
   assert.equal(network.mock.callCount(), 0);
@@ -254,7 +257,7 @@ test("generation controls do not affect vision even when generation configuratio
     return Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Synthetic description" } }] });
   });
   for (const env of [{}, controlEnv, { PI_KS_V2_GENERATE_PROTOCOL: "unsupported" }]) {
-    await invoke(register({ ...modelEnv, ...env }), "ks_v2_describe_image", { path: "image.png", prompt: "Describe" }, context(cwd, async () => true));
+    await invoke(registerFor(cwd, { ...modelEnv, ...env }), "ks_v2_describe_image", { path: "image.png", prompt: "Describe" }, context(cwd, async () => true));
   }
   assert.deepEqual(requests[1], requests[0]);
   assert.deepEqual(requests[2], requests[0]);

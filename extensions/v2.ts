@@ -1,4 +1,4 @@
-import { checkedStudioPaths } from "../src/core/studio-paths.ts";
+import { checkedStudioPaths, defaultStudioRoot } from "../src/core/studio-paths.ts";
 import { PdfGenerations, profileProvider } from "../src/application/pdf-generation-store.ts";
 import { PdfJobs, DEFAULT_PDF_JOB_LIMITS } from "../src/application/pdf-jobs.ts";
 import { OCR_WARNING } from "../src/domain/ocr.ts";
@@ -142,11 +142,10 @@ function allowedSource(cwd: string, path: string): void {
   }
 }
 
-async function privateDirectory(cwd: string, path: string): Promise<void> {
+async function privateDirectory(storageRoot: string, path: string): Promise<void> {
   // Safe component-wise creation; do not chmod an existing directory owned by the user.
-  confined(cwd, path);
   await ensureDirectorySafe(path);
-  await assertNoSymlinkPath(cwd, path);
+  await assertNoSymlinkPath(storageRoot, path);
   const info = await lstat(path);
   if (
     typeof process.getuid !== "function" ||
@@ -210,6 +209,8 @@ function reply(value: unknown) {
 
 export default function v2(pi: ExtensionAPI): void {
   const env = Object.freeze({ ...process.env });
+  const studioRoot = defaultStudioRoot();
+  const storagePaths = (cwd: string) => checkedStudioPaths(cwd, studioRoot);
   const grants = new Set(
     (env.PI_KS_V2_HEADLESS_GRANTS ?? "")
       .split(",")
@@ -248,11 +249,12 @@ export default function v2(pi: ExtensionAPI): void {
     if (!namePattern.test(collection))
       throw new Error("Invalid collection name");
     const cwd = resolve(ctx.cwd);
-    const base = checkedStudioPaths(cwd).collections;
+    const paths = storagePaths(cwd);
+    const base = paths.collections;
     const root = join(base, collection);
-    if (!create) await assertNoSymlinkPath(cwd, root);
-    await privateDirectory(cwd, base);
-    await privateDirectory(cwd, root);
+    if (!create) await assertNoSymlinkPath(paths.root, root);
+    await privateDirectory(paths.root, base);
+    await privateDirectory(paths.root, root);
     return new KnowledgeRuntime(root);
   }
   async function embedding(
@@ -437,7 +439,7 @@ export default function v2(pi: ExtensionAPI): void {
     operation: () => Promise<T>,
   ): Promise<T> {
     return withFileMutationQueue(
-      checkedStudioPaths(ctx.cwd).root,
+      storagePaths(ctx.cwd).root,
       async () => {
         signal.throwIfAborted();
         const value = await operation();
@@ -455,12 +457,12 @@ export default function v2(pi: ExtensionAPI): void {
       if (raw !== undefined && (!/^[1-9][0-9]*$/.test(raw) || !Number.isSafeInteger(Number(raw)))) throw new Error(`Invalid host ${key}`);
       return raw === undefined ? fallback : Number(raw);
     };
-    return new PdfJobs(checkedStudioPaths(ctx.cwd).pdfJobs, {
+    return new PdfJobs(storagePaths(ctx.cwd).pdfJobs, {
       maxInputBytes: quota("PI_KS_V2_PDF_MAX_INPUT_BYTES", DEFAULT_PDF_JOB_LIMITS.maxInputBytes),
       maxStorageBytes: quota("PI_KS_V2_PDF_MAX_STORAGE_BYTES", DEFAULT_PDF_JOB_LIMITS.maxStorageBytes),
     });
   }
-  const generations = (ctx: ExtensionContext) => new PdfGenerations(checkedStudioPaths(ctx.cwd).pdfGenerations, pdfJobs(ctx).quotas);
+  const generations = (ctx: ExtensionContext) => new PdfGenerations(storagePaths(ctx.cwd).pdfGenerations, pdfJobs(ctx).quotas);
   const profileSchema = Type.Object({
     id: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
     endpoint: Type.String({ maxLength: 2048 }), kind: Type.Unsafe<"openai" | "wemm">({ type: "string", enum: ["openai", "wemm"] }),
@@ -783,7 +785,7 @@ export default function v2(pi: ExtensionAPI): void {
     name: "ks_v2_export",
     label: "V2 evidence export",
     description:
-      "Compile retrieved evidence deterministically into portable Markdown/HTML plus original PNG/JPEG/WebP assets plus PNG renditions and provenance. NOT model generation or byte-identical packaging (IDs vary). Output is cwd/.pi/knowledge-studio/exports/<output>/<unique package>; requires trusted full-content/image/excerpt approval. Optional rerank requires separate approval to send query and up to 30 native capture or unverified OCR candidate texts.",
+      "Compile retrieved evidence deterministically into portable Markdown/HTML plus original PNG/JPEG/WebP assets plus PNG renditions and provenance. NOT model generation or byte-identical packaging (IDs vary). Output is ~/.pi/knowledge-studio/exports/<output>/<unique package> (or the configured PI_KS_V2_DATA_DIR/exports/); requires trusted full-content/image/excerpt approval. Optional rerank requires separate approval to send query and up to 30 native capture or unverified OCR candidate texts.",
     parameters: Type.Object({
       collection: collectionSchema,
       query: querySchema,
@@ -797,7 +799,7 @@ export default function v2(pi: ExtensionAPI): void {
         if (!namePattern.test(params.output))
           throw new Error("Invalid output directory name");
         const cwd = resolve(ctx.cwd),
-          base = checkedStudioPaths(cwd).exports,
+          base = storagePaths(cwd).exports,
           output = join(base, params.output);
         await approve(
           ctx,
@@ -814,8 +816,8 @@ export default function v2(pi: ExtensionAPI): void {
             ? await embedding(ctx, active, "query")
             : undefined;
         const kb = await runtime(ctx, params.collection);
-        await privateDirectory(cwd, base);
-        await privateDirectory(cwd, output);
+        await privateDirectory(storagePaths(cwd).root, base);
+        await privateDirectory(storagePaths(cwd).root, output);
         active.throwIfAborted();
         let path: string;
         if (reranker) {
@@ -923,7 +925,7 @@ export default function v2(pi: ExtensionAPI): void {
         }
         const document = answer.document;
         const cwd = resolve(ctx.cwd),
-          base = checkedStudioPaths(cwd).exports,
+          base = storagePaths(cwd).exports,
           output = join(base, params.output);
         await approve(
           ctx,
@@ -931,8 +933,8 @@ export default function v2(pi: ExtensionAPI): void {
           "export",
           `Write model-generated portable package to ${JSON.stringify(output)}? Approve ALL generated body text/captions, selected supplementary excerpts, original PNG/JPEG/WebP bytes or derived OCR page renders INCLUDING metadata, PNG renditions, and source labels/provenance. No redaction. Artifacts may later be shared; returned path goes to this conversation/provider/session log. Generated text remains untrusted, not semantic proof.\n${JSON.stringify({ document, bundle })}`,
         );
-        await privateDirectory(cwd, base);
-        await privateDirectory(cwd, output);
+        await privateDirectory(storagePaths(cwd).root, base);
+        await privateDirectory(storagePaths(cwd).root, output);
         // Same optimistic epoch contract as runtime.export; not a cross-process transaction.
         await checkEpoch(kb, bundle.snapshotId, active);
         const path = await exportPortableDocument(

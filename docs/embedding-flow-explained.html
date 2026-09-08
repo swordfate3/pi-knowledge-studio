@@ -29,9 +29,9 @@
 <h2>现在有两条入口，不要混用</h2>
 <div class="grid"><div class="tile"><h3>普通 collection</h3><pre><span class="fn">ks_v2_import</span>  <span class="comment">// 只解析、保存</span>
 <span class="fn">ks_v2_index</span>   <span class="comment">// 显式建立向量索引</span>
-<span class="fn">ks_v2_search</span>(mode=<span class="str">"hybrid"</span>)</pre><p>索引每批最多 <b>16</b> 个文字块。重复 index 会重新计算活动文档，不是断点续传。</p><p>默认 lexical 不调用模型；hybrid 将 BM25 与向量余弦排名用 RRF 融合。</p><code class="path">&lt;cwd&gt;/.pi/knowledge-studio/collections/&lt;collection&gt;/</code></div><div class="tile"><h3>整本 PDF 任务</h3><pre><span class="fn">ks_v2_pdf_start</span>(…, index=<span class="kw">true</span>)
+<span class="fn">ks_v2_search</span>(mode=<span class="str">"hybrid"</span>)</pre><p>索引每批最多 <b>16</b> 个文字块。重复 index 会重新计算活动文档，不是断点续传。</p><p>默认 lexical 不调用模型；hybrid 将 BM25 与向量余弦排名用 RRF 融合。</p><code class="path">~/.pi/knowledge-studio/collections/&lt;collection&gt;/</code></div><div class="tile"><h3>整本 PDF 任务</h3><pre><span class="fn">ks_v2_pdf_start</span>(…, index=<span class="kw">true</span>)
 <span class="fn">ks_v2_pdf_resume</span>(…, index=<span class="kw">true</span>)
-<span class="fn">ks_v2_pdf_search</span>(…, mode=<span class="str">"hybrid"</span>)</pre><p>先每批最多 <b>5 页</b>解析整书，再每批最多 <b>4 块</b> embedding。向量和进度一起保存，恢复时复用已提交批次。</p><p>默认 index 关闭；不索引会停在 parsed，目前连关键词搜索也要求先达到 ready。</p><code class="path">&lt;cwd&gt;/.pi/knowledge-studio/pdf-jobs/</code></div></div>
+<span class="fn">ks_v2_pdf_search</span>(…, mode=<span class="str">"hybrid"</span>)</pre><p>先每批最多 <b>5 页</b>解析整书，再每批最多 <b>4 块</b> embedding。向量和进度一起保存，恢复时复用已提交批次。</p><p>默认 index 关闭；不索引会停在 parsed，目前连关键词搜索也要求先达到 ready。</p><code class="path">~/.pi/knowledge-studio/pdf-jobs/</code></div></div>
 <p class="warn">PDF 专用搜索当前是简单的子串命中比例 + 正余弦相似度，不是普通 collection 的 BM25 + RRF。两套存储和搜索尚未统一。</p>
 <p class="muted">以上为调用意图示意，不是可直接粘贴执行的 JavaScript；工具的其他必填参数省略。</p>
 </section>

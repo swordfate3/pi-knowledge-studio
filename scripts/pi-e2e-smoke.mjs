@@ -482,6 +482,7 @@ export async function runSmoke({
   const root = await mkdtemp(join(tmpdir(), "pi-e2e-"));
   const home = join(root, "home"),
     cwd = join(root, "work"),
+    storageRoot = join(root, "studio"),
     agent = join(home, ".pi", "agent");
   await mkdir(agent, { recursive: true, mode: 0o700 });
   await mkdir(cwd, { mode: 0o700 });
@@ -550,6 +551,8 @@ export async function runSmoke({
       XDG_CONFIG_HOME: join(home, ".config"),
       XDG_CACHE_HOME: join(home, ".cache"),
       PI_CODING_AGENT_DIR: agent,
+      // Keep this subprocess isolated while production V2 defaults to ~/.pi/knowledge-studio.
+      PI_KS_V2_DATA_DIR: storageRoot,
       PI_OFFLINE: "1",
       PI_TELEMETRY: "0",
       NO_COLOR: "1",
@@ -682,7 +685,7 @@ export async function runSmoke({
     }
     assert.equal(generated.generatedByModel, true);
     assert.equal(generated.semanticProof, false);
-    assert.ok(generated.path.startsWith(join(cwd, ".pi", "knowledge-studio", "exports") + "/"));
+    assert.ok(generated.path.startsWith(join(storageRoot, "exports") + "/"));
     const generatedPackage = await verifyPackage(generated.path, original);
     const beforeExportDeny = await snapshot(cwd);
     await call(
@@ -697,7 +700,7 @@ export async function runSmoke({
       { query: "synthetic semaphore", output: "evidence" },
       ["export"],
     );
-    assert.ok(exported.path.startsWith(join(cwd, ".pi", "knowledge-studio", "exports") + "/"));
+    assert.ok(exported.path.startsWith(join(storageRoot, "exports") + "/"));
     const evidencePackage = await verifyPackage(exported.path, original);
     await rpc.close();
     rpc = new Rpc(cli, cwd, env, record);

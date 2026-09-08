@@ -1,17 +1,36 @@
 import { lstatSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
-/** Project defaults only. Standalone APIs with explicit roots remain independent. */
-export function studioPaths(cwd: string) {
-  const root = resolve(cwd, ".pi", "knowledge-studio");
+export const V2_DATA_DIR_ENV = "PI_KS_V2_DATA_DIR";
+
+/** The V2 store is shared by Pi sessions through the user's persistent ~/.pi area. */
+export function defaultStudioRoot(): string {
+  const configured = process.env[V2_DATA_DIR_ENV]?.trim();
+  if (configured) {
+    if (!configured.startsWith("/"))
+      throw new Error(`${V2_DATA_DIR_ENV} must be an absolute path`);
+    return resolve(configured);
+  }
+  return join(homedir(), ".pi", "knowledge-studio");
+}
+
+/** Explicit roots remain available for tests, migrations, and standalone callers. */
+export function studioPaths(_cwd: string, root = defaultStudioRoot()) {
+  const resolvedRoot = resolve(root);
   return {
-    root,
-    collections: join(root, "collections"),
-    pdfJobs: join(root, "pdf-jobs"),
-    pdfGenerations: join(root, "pdf-generations"),
-    exports: join(root, "exports"),
-    legacyV1: join(root, "legacy-v1"),
+    root: resolvedRoot,
+    collections: join(resolvedRoot, "collections"),
+    pdfJobs: join(resolvedRoot, "pdf-jobs"),
+    pdfGenerations: join(resolvedRoot, "pdf-generations"),
+    exports: join(resolvedRoot, "exports"),
+    legacyV1: join(resolvedRoot, "legacy-v1"),
   };
+}
+
+/** The V1 compatibility store remains project-relative and is intentionally separate. */
+export function projectStudioPaths(cwd: string) {
+  return studioPaths(cwd, resolve(cwd, ".pi", "knowledge-studio"));
 }
 
 function stat(path: string) {
@@ -23,17 +42,18 @@ function stat(path: string) {
 }
 
 /** Read-only, fail closed even when both old and new stores exist. No migration. */
-export function checkedStudioPaths(cwd: string) {
-  const paths = studioPaths(cwd);
+export function checkedStudioPaths(cwd: string, root = defaultStudioRoot()) {
+  const paths = studioPaths(cwd, root);
+  const rootParent = dirname(paths.root);
   const old = [
-    [resolve(cwd, ".pi", "knowledge-studio-v2"), paths.collections],
-    [resolve(cwd, ".pi", "knowledge-studio-v2-pdf-jobs"), paths.pdfJobs],
-    [resolve(cwd, ".pi", "knowledge-studio-v2-pdf-generations"), paths.pdfGenerations],
-    [resolve(cwd, "knowledge-studio-v2-exports"), paths.exports],
+    [join(rootParent, "knowledge-studio-v2"), paths.collections],
+    [join(rootParent, "knowledge-studio-v2-pdf-jobs"), paths.pdfJobs],
+    [join(rootParent, "knowledge-studio-v2-pdf-generations"), paths.pdfGenerations],
+    [join(dirname(rootParent), "knowledge-studio-v2-exports"), paths.exports],
   ];
   // V1 used this same umbrella, but its JSON collections are incompatible with V2.
-  // Never follow symlinks while inspecting the shared prefix.
-  for (const path of [resolve(cwd), resolve(cwd, ".pi"), paths.root, paths.collections]) {
+  // Never follow symlinks while inspecting the selected persistent root.
+  for (const path of [paths.root, paths.collections]) {
     const info = stat(path);
     if (info && (!info.isDirectory() || info.isSymbolicLink()))
       throw new Error(`Unsafe Studio directory: ${path}`);

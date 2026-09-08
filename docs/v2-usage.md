@@ -23,7 +23,7 @@ cd /path/to/private-workspace
 pi -e /path/to/pi-knowledge-studio/extensions/v2.ts
 ```
 
-All v2 source/data/output paths are relative to the **Pi working directory**, not to the extension checkout. Extension registration performs no filesystem writes or network calls. Environment configuration is snapshotted at registration; restart/reload the extension after host-side changes.
+Source input paths are relative to the **Pi working directory**, not to the extension checkout. V2 persistent data and outputs default to `~/.pi/knowledge-studio/` (`/root/.pi/knowledge-studio/` in the standard container), independent of the working directory. Set `PI_KS_V2_DATA_DIR` to an absolute path before starting Pi to use another private root; the value is snapshotted when the extension registers. Extension registration performs no filesystem writes or network calls. Existing project-local V2 data is not automatically moved or merged; see [storage layout and upgrade instructions](storage-layout.md).
 
 ## First local workflow
 
@@ -38,7 +38,7 @@ ks_v2_export  {"collection":"demo","query":"a term present in your notes","outpu
 
 Approve each requested action in the trusted Pi confirmation UI. Search with no relevant hits reports an error rather than inventing an answer. `ks_v2_export` is deterministic **evidence compilation**, not model-generated prose; bundle/package UUIDs mean repeated exports are not byte-identical.
 
-Exports are unique packages below `.pi/knowledge-studio/exports/<output>/`, containing `document.md`, `document.html`, image assets and `sources.json`, `evidence.json`, `manifest.json`. JPEG/WebP originals are retained alongside separate PNG display renditions; provenance identifies both. Original bytes are not replaced by the display conversion. Keep the whole package together for offline viewing/sharing. Outputs include sensitive text and provenance; nothing is redacted.
+Exports are unique packages below `~/.pi/knowledge-studio/exports/<output>/` (or the configured `PI_KS_V2_DATA_DIR/exports/`), containing `document.md`, `document.html`, image assets and `sources.json`, `evidence.json`, `manifest.json`. JPEG/WebP originals are retained alongside separate PNG display renditions; provenance identifies both. Original bytes are not replaced by the display conversion. Keep the whole package together for offline viewing/sharing. Outputs include sensitive text and provenance; nothing is redacted.
 
 ## Tools
 
@@ -61,7 +61,7 @@ Tool JSON replies are capped at 40,000 bytes/1500 lines. Narrow the query/limit 
 
 ## Storage, permissions and disclosure
 
-- Collections live at `<cwd>/.pi/knowledge-studio/collections/<collection>/`, with SQLite catalog and content-addressed `blobs/`. The v2 base/collection directories and export base/output directories must be owned by the process user and **0700**. New directories are created safely; existing directories are not silently chmodded. If an owner-only error occurs, inspect the named directory and fix only that intended private directory (for example `chmod 700 <directory>`), not the entire workspace recursively.
+- Collections live at `~/.pi/knowledge-studio/collections/<collection>/` (or under the configured `PI_KS_V2_DATA_DIR`), with SQLite catalog and content-addressed `blobs/`. The v2 base/collection directories and export base/output directories must be owned by the process user and **0700**. New directories are created safely; existing directories are not silently chmodded. If an owner-only error occurs, inspect the named directory and fix only that intended private directory (for example `chmod 700 <directory>`), not the entire workspace recursively.
 - Source paths must be strictly inside cwd, without symlink traversal. One leading `@` is accepted. No recursive directory imports or URL fetching. Hidden path components and runtime/generated/vendor/build/cache/log/temp/credential-like names are refused, as is the export directory. These filename filters are **not secret detection**. Linked Markdown image paths undergo the same exclusions; conservative preflight can reject image-like syntax even in code fences.
 - UI runs require trusted confirmation for each operation. Headless runs deny by default; host-set `PI_KS_V2_HEADLESS_GRANTS` is a comma-separated allowlist of `import,ocr,search,embedding,index,export,remove,list,generate,vision,enrich,rerank`. Grant only needed capabilities, not the whole list. For example, `PI_KS_V2_HEADLESS_GRANTS=search,list pi -e /path/to/extensions/v2.ts -p 'List demo and search it for scheduling'` allows metadata/excerpt disclosure from an existing collection without granting import, export or network embedding. Headless grants do not bypass confirmations when a UI is present.
 - Search/list disclose source content or metadata to Pi's conversation model and logs even when retrieval is local. Generation sends the **entire selected evidence bundle and title**, including labels, locators, hashes and image metadata, but **no PNG bytes**, to its endpoint. Vision sends original PNG bytes including metadata, or a verified metadata-free PNG rendition for a captured JPEG/WebP. The latter's original JPEG/WebP bytes are not sent to vision. Embedding sends all text chunks during indexing, or the query during hybrid retrieval; no images.

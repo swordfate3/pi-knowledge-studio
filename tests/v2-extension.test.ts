@@ -35,6 +35,9 @@ function register(env: Record<string, string> = {}) {
   }
   return tools;
 }
+function registerFor(cwd: string, env: Record<string, string> = {}) {
+  return register({ ...env, PI_KS_V2_DATA_DIR: join(cwd, ".pi", "knowledge-studio") });
+}
 function context(
   cwd: string,
   confirm?: (title: string, message: string) => Promise<boolean>,
@@ -69,7 +72,7 @@ test("V2 registers additive tools without writes/network; headless defaults deny
   const network = t.mock.method(globalThis, "fetch", async () => {
     throw new Error("unexpected network");
   });
-  const tools = register(modelEnv);
+  const tools = registerFor(cwd, modelEnv);
   assert.deepEqual(
     [...tools.keys()].sort(),
     [
@@ -129,7 +132,7 @@ test("V2 registers additive tools without writes/network; headless defaults deny
 test("generation approves actual bundle before egress and all sharing before export", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-generation-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const tools = register({
+  const tools = registerFor(cwd, {
     ...modelEnv,
     PI_KS_V2_GENERATE_API_KEY: "fixture-key",
     PI_KS_V2_GENERATE_TIMEOUT_MS: "180000",
@@ -228,7 +231,7 @@ test("generation honors none, selective and required with host-linked answer fig
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-answer-policy-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   await enrichmentFixture(cwd);
-  const tools = register(modelEnv);
+  const tools = registerFor(cwd, modelEnv);
   for (const policy of ["none", "selective", "required"] as const) {
     const question = "Explain the Original captured text";
     const approvals: string[] = [];
@@ -291,7 +294,7 @@ test("generation honors none, selective and required with host-linked answer fig
 test("generation denial and source epoch changes prevent model egress", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-epoch-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const tools = register(modelEnv);
+  const tools = registerFor(cwd, modelEnv);
   await writeFile(join(cwd, "input.txt"), "Hello evidence");
   await invoke(
     tools,
@@ -342,7 +345,7 @@ test("vision uses approved raw PNG and returns untrusted, non-indexed descriptio
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const bytes = encodePng(1, 1, 3, Buffer.from([255, 0, 0]));
   await writeFile(join(cwd, "image.png"), bytes);
-  const tools = register(modelEnv);
+  const tools = registerFor(cwd, modelEnv);
   const timeout = t.mock.method(AbortSignal, "timeout");
   let approved = false;
   t.mock.method(
@@ -389,7 +392,7 @@ test("vision uses approved raw PNG and returns untrusted, non-indexed descriptio
 test("embedding provider is bound to exact operation purpose", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-purpose-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const tools = register({
+  const tools = registerFor(cwd, {
     PI_KS_V2_HEADLESS_GRANTS: "import,search,embedding,index,export",
     PI_KS_V2_EMBED_ENDPOINT: "http://127.0.0.1:9876/embed",
     PI_KS_V2_EMBED_KIND: "openai",
@@ -440,7 +443,7 @@ test("PDF import returns explicit capture limitations", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-pdf-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   await writeFile(join(cwd, "input.pdf"), "%PDF-fixture");
-  const tools = register({ PI_KS_V2_HEADLESS_GRANTS: "import" });
+  const tools = registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "import" });
   // Parser correctness belongs to pdf-capture tests; exercise extension acceptance/result.
   t.mock.method(KnowledgeRuntime.prototype, "ingest", async () => ({
     id: "fixture",
@@ -463,7 +466,7 @@ test("source changes after model response block export", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-stale-export-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   await writeFile(join(cwd, "input.txt"), "Hello evidence");
-  const tools = register(modelEnv);
+  const tools = registerFor(cwd, modelEnv);
   const ctx = context(cwd, async (title) => {
     if (title.endsWith("export")) {
       const kb = new KnowledgeRuntime(
@@ -554,7 +557,7 @@ test("malformed trusted model deadlines deny before approval, reads or network",
       "999999999999999999999",
     ]) {
       const key = `PI_KS_V2_${kind}_TIMEOUT_MS`;
-      const tools = register({ ...modelEnv, [key]: value });
+      const tools = registerFor(cwd, { ...modelEnv, [key]: value });
       await assert.rejects(
         invoke(
           tools,
@@ -586,7 +589,7 @@ test("vision passes its independent trusted deadline to transport", async (t) =>
     join(cwd, "image.png"),
     encodePng(1, 1, 3, Buffer.from([0, 0, 0])),
   );
-  const tools = register({
+  const tools = registerFor(cwd, {
     ...modelEnv,
     PI_KS_V2_VISION_TIMEOUT_MS: "1",
     PI_KS_V2_GENERATE_TIMEOUT_MS: "180000",
@@ -634,7 +637,7 @@ test("DOCX import reports restricted capture and Python prerequisite, retaining 
       images: [],
     }),
   );
-  const tools = register();
+  const tools = registerFor(cwd);
   const params = { collection: "demo", path: "input.docx" };
   await assert.rejects(
     invoke(tools, "ks_v2_import", params, context(cwd)),
@@ -669,7 +672,7 @@ async function enrichmentFixture(cwd: string) {
     "Original captured text.\n\n![diagram](image.png)",
   );
   await invoke(
-    register({ PI_KS_V2_HEADLESS_GRANTS: "import" }),
+    registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "import" }),
     "ks_v2_import",
     { collection: "demo", path: "input.md" },
     context(cwd),
@@ -679,7 +682,7 @@ async function enrichmentFixture(cwd: string) {
   );
   const documentId = (await kb.list())[0]!.id;
   const result = await invoke(
-    register({ PI_KS_V2_HEADLESS_GRANTS: "search" }),
+    registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "search" }),
     "ks_v2_document",
     { collection: "demo", documentId },
     context(cwd),
@@ -718,7 +721,7 @@ test("enrichment requires two distinct approvals and explicit host revision with
   for (const grants of ["", "enrich", "vision"]) {
     await assert.rejects(
       invoke(
-        register({ ...enrichmentEnv, PI_KS_V2_HEADLESS_GRANTS: grants }),
+        registerFor(cwd, { ...enrichmentEnv, PI_KS_V2_HEADLESS_GRANTS: grants }),
         "ks_v2_enrich_image",
         params,
         context(cwd),
@@ -730,7 +733,7 @@ test("enrichment requires two distinct approvals and explicit host revision with
     const approvals: string[] = [];
     await assert.rejects(
       invoke(
-        register(enrichmentEnv),
+        registerFor(cwd, enrichmentEnv),
         "ks_v2_enrich_image",
         params,
         context(cwd, async (title) => {
@@ -748,7 +751,7 @@ test("enrichment requires two distinct approvals and explicit host revision with
   for (const revision of [undefined, "", " "]) {
     await assert.rejects(
       invoke(
-        register({
+        registerFor(cwd, {
           ...modelEnv,
           ...(revision === undefined
             ? {}
@@ -773,7 +776,7 @@ test("approved enrichment previews exact identity and retrieves original text vi
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const { bytes, document, params } = await enrichmentFixture(cwd);
   const approvals: string[] = [];
-  const tools = register({
+  const tools = registerFor(cwd, {
     ...enrichmentEnv,
     PI_KS_V2_VISION_API_KEY: "secret-fixture",
   });
@@ -830,7 +833,7 @@ test("approved enrichment previews exact identity and retrieves original text vi
   assert.match(JSON.stringify(result), /retrieval-only/);
   assert.match(JSON.stringify(result), /never source quotation/);
   const search = await invoke(
-    register({ PI_KS_V2_HEADLESS_GRANTS: "search" }),
+    registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "search" }),
     "ks_v2_search",
     { collection: "demo", query: "quasarwidget" },
     context(cwd),
@@ -849,7 +852,7 @@ test("mutation during either enrichment approval rejects stale preview before mo
     const { kb, params } = await enrichmentFixture(cwd);
     await assert.rejects(
       invoke(
-        register(enrichmentEnv),
+        registerFor(cwd, enrichmentEnv),
         "ks_v2_enrich_image",
         params,
         context(cwd, async (title) => {
@@ -895,7 +898,7 @@ test("rerank configuration and distinct consent fail closed for all retrieval to
     for (const key of ["ENDPOINT", "MODEL", "REVISION"]) {
       await assert.rejects(
         invoke(
-          register({
+          registerFor(cwd, {
             ...modelEnv,
             ...rerankEnv,
             [`PI_KS_V2_RERANK_${key}`]: "",
@@ -916,7 +919,7 @@ test("rerank configuration and distinct consent fail closed for all retrieval to
     ]) {
       await assert.rejects(
         invoke(
-          register({
+          registerFor(cwd, {
             ...modelEnv,
             ...rerankEnv,
             PI_KS_V2_RERANK_ENDPOINT: endpoint,
@@ -931,7 +934,7 @@ test("rerank configuration and distinct consent fail closed for all retrieval to
     for (const timeout of ["", "01", "1e3", " 1", "0", "180001"]) {
       await assert.rejects(
         invoke(
-          register({
+          registerFor(cwd, {
             ...modelEnv,
             ...rerankEnv,
             PI_KS_V2_RERANK_TIMEOUT_MS: timeout,
@@ -943,7 +946,7 @@ test("rerank configuration and distinct consent fail closed for all retrieval to
         /strict integer/,
       );
     }
-    const tools = register({
+    const tools = registerFor(cwd, {
       ...modelEnv,
       ...rerankEnv,
       PI_KS_V2_HEADLESS_GRANTS: "search,generate,export,embedding",
@@ -969,7 +972,7 @@ test("rerank configuration and distinct consent fail closed for all retrieval to
 test("default and explicit false never call reranker or require rerank config", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-rerank-default-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const tools = register({
+  const tools = registerFor(cwd, {
     ...modelEnv,
     PI_KS_V2_HEADLESS_GRANTS: "import,search,export",
   });
@@ -1048,7 +1051,7 @@ test("approved local rerank sends query and 30 originals, preserves authority ac
   assert.ok(address && typeof address !== "string");
   const endpoint = `http://127.0.0.1:${address.port}/rerank`;
   const env = { ...modelEnv, ...rerankEnv, PI_KS_V2_RERANK_ENDPOINT: endpoint };
-  const tools = register(env);
+  const tools = registerFor(cwd, env);
   const approvals: string[] = [];
   const ctx = context(cwd, async (title, message) => {
     approvals.push(title.split(": ")[1]!);
@@ -1137,7 +1140,7 @@ test("approved local rerank sends query and 30 originals, preserves authority ac
 test("HTML import default deny, structural disclosure, shared resource preflight and offline capture", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-html-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const tools = register(),
+  const tools = registerFor(cwd),
     params = { collection: "demo", path: "input.html" };
   await writeFile(
     join(cwd, "input.html"),
@@ -1213,7 +1216,7 @@ test("HTML changed after preflight still enforces source policy before publishin
   );
   await assert.rejects(
     invoke(
-      register({ PI_KS_V2_HEADLESS_GRANTS: "import" }),
+      registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "import" }),
       "ks_v2_import",
       { collection: "demo", path: "input.html" },
       context(cwd),
@@ -1228,7 +1231,7 @@ test("HTML changed after preflight still enforces source policy before publishin
   try {
     const { fixture } = await import("./pdf-job-fixture.ts");
     await writeFile(join(cwd, "book.pdf"), fixture(["local synthetic book"]));
-    const tools = register({ PI_KS_V2_HEADLESS_GRANTS: "import,list,search" });
+    const tools = registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "import,list,search" });
     const result = await invoke(tools, "ks_v2_pdf_start", { path: "book.pdf" }, context(cwd));
     const text = result.content.find(c => c.type === "text"); assert.ok(text?.type === "text");
     const m = JSON.parse(text.text); assert.equal(m.state, "parsed"); assert.equal(m.space, null);
@@ -1244,7 +1247,7 @@ test("PDF profile tools persist revisions and egress denial leaves shadow paused
   const cwd = await mkdtemp(join(tmpdir(), "ks-profile-tools-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const network = t.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected egress"); });
-  const tools = register();
+  const tools = registerFor(cwd);
   const approved = context(cwd, async () => true);
   const profile = { id: "local", endpoint: "http://127.0.0.1:7777/embeddings", kind: "openai", space: { provider: "fixture", model: "synthetic", revision: "1", dimension: 2, queryInstruction: "", documentInstruction: "" }, credentialEnv: null };
   await invoke(tools, "ks_v2_profile_add", profile, approved);
@@ -1271,7 +1274,7 @@ test("legacy hybrid tool requires separate association and redacts host transpor
   const { PdfGenerations, profileSpace } = await import("../src/application/pdf-generation-store.ts");
   const { fixture } = await import("./pdf-job-fixture.ts");
   const profile = { id: "local", revision: 1, endpoint: "http://127.0.0.1:7777/embeddings", kind: "openai" as const, space: { provider: "fixture", model: "synthetic", revision: "1", dimension: 2, queryInstruction: "", documentInstruction: "" }, credentialEnv: "PI_KS_PROFILE_SYNTHETIC" };
-  const tools = register({ PI_KS_PROFILE_SYNTHETIC: "secret-marker\ntrailing" }), approved = context(cwd, async () => true);
+  const tools = registerFor(cwd, { PI_KS_PROFILE_SYNTHETIC: "secret-marker\ntrailing" }), approved = context(cwd, async () => true);
   const { revision: _revision, ...input } = profile; await invoke(tools, "ks_v2_profile_add", input, approved);
   await writeFile(join(cwd, "source.pdf"), fixture(["synthetic evidence"], true));
   const old = new PdfJobs(join(cwd, "legacy")), m = await old.start(cwd, join(cwd, "source.pdf"));
@@ -1287,7 +1290,7 @@ test("legacy hybrid tool requires separate association and redacts host transpor
   const network = t.mock.method(globalThis, "fetch", async (url: string | URL | Request, init?: RequestInit) => { new Request(url, init); return new Response(JSON.stringify({ model: "synthetic", data: [{ index: 0, embedding: [1, 2] }] })); });
   await assert.rejects(invoke(tools, "ks_v2_pdf_generation_search", query, approved), (error: unknown) => { assert.ok(error instanceof Error); assert.ok(!String(error.stack).includes("secret-marker")); assert.equal(error.cause, undefined); return true; });
   assert.equal(network.mock.callCount(), 0);
-  const good = register({ PI_KS_PROFILE_SYNTHETIC: "synthetic-valid" });
+  const good = registerFor(cwd, { PI_KS_PROFILE_SYNTHETIC: "synthetic-valid" });
   await invoke(good, "ks_v2_pdf_generation_search", query, approved); assert.equal(network.mock.callCount(), 1);
   network.mock.mockImplementation(async () => { throw new Error("secret-marker", { cause: new Error("secret-marker") }); });
   await assert.rejects(invoke(good, "ks_v2_pdf_generation_search", query, approved), (error: unknown) => { assert.ok(error instanceof Error); assert.equal(error.message, "Profile embedding request failed"); assert.equal(error.cause, undefined); return true; });
@@ -1298,14 +1301,14 @@ test("legacy root blocks extension storage without creating a replacement", asyn
   const cwd = await mkdtemp(join(tmpdir(), "ks-old-layout-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   await mkdir(join(cwd, ".pi", "knowledge-studio-v2"), { recursive: true, mode: 0o700 });
-  await assert.rejects(invoke(register({ PI_KS_V2_HEADLESS_GRANTS: "list" }), "ks_v2_list", { collection: "demo" }, context(cwd)), /Legacy Studio storage detected/);
+  await assert.rejects(invoke(registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "list" }), "ks_v2_list", { collection: "demo" }, context(cwd)), /Legacy Studio storage detected/);
   assert.deepEqual(await readdir(join(cwd, ".pi")), ["knowledge-studio-v2"]);
 });
 
 test("all new Studio children are excluded as source input", async t => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-layout-source-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const tools = register({ PI_KS_V2_HEADLESS_GRANTS: "import" });
+  const tools = registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "import" });
   for (const child of ["collections", "pdf-jobs", "pdf-generations", "exports", "legacy-v1"]) {
     await assert.rejects(invoke(tools, "ks_v2_import", { collection: "demo", path: `.pi/knowledge-studio/${child}/source.md` }, context(cwd)), /excludes/);
   }

@@ -9,9 +9,10 @@ import type {
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import v2 from "../extensions/v2.ts";
-function register(grants: string, config?: string) {
+function register(grants: string, config?: string, storageRoot?: string) {
   const saved = { ...process.env };
   process.env.PI_KS_V2_HEADLESS_GRANTS = grants;
+  if (storageRoot) process.env.PI_KS_V2_DATA_DIR = storageRoot;
   if (config) process.env.PI_KS_V2_OCR_CONFIG = config;
   else delete process.env.PI_KS_V2_OCR_CONFIG;
   const tools = new Map<string, ToolDefinition>();
@@ -36,7 +37,7 @@ test("OCR requires a separate grant; no model paths and no config IO at registra
     resolve("tests/fixtures/ocr/bilingual-scanned.pdf"),
     join(cwd, "input.pdf"),
   );
-  const tools = register("import", "/missing-config");
+  const tools = register("import", "/missing-config", join(cwd, ".pi", "knowledge-studio"));
   const tool = tools.get("ks_v2_import")!;
   assert.doesNotMatch(
     JSON.stringify(tool.parameters),
@@ -54,7 +55,7 @@ test("OCR requires a separate grant; no model paths and no config IO at registra
     /ocr denied/,
   );
   assert.deepEqual(await readdir(cwd), ["input.pdf"]);
-  const approved = register("import,ocr");
+  const approved = register("import,ocr", undefined, join(cwd, ".pi", "knowledge-studio"));
   await assert.rejects(
     approved
       .get("ks_v2_import")!
@@ -80,7 +81,7 @@ test("real extension OCR config is registration-snapshotted and consent precedes
     resolve("tests/fixtures/ocr/bilingual-scanned.pdf"),
     join(cwd, "input.pdf"),
   );
-  const tools = register("", config);
+  const tools = register("", config, join(cwd, ".pi", "knowledge-studio"));
   const approvals: string[] = [];
   const ctx = {
     cwd,
