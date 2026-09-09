@@ -228,6 +228,28 @@ test("metadata inspection never parses vectors; small streaming budget rejects b
   } finally { await rm(x.root, { recursive: true, force: true }); }
 });
 
+test("streaming vector inspection bounds each batch instead of the complete vector store", async () => {
+  const x = await setup();
+  try {
+    const db = new DatabaseSync(join(x.legacy, x.m.bookId + ".sqlite"));
+    const windows = new Map<number, { elements: Array<{ id: string; page: number; text: string }> }>();
+    for (const row of db.prepare("SELECT start,json FROM windows").all() as Array<{ start: number; json: string }>) windows.set(row.start, JSON.parse(row.json));
+    const rows = db.prepare("SELECT start,offset,json FROM batches").all() as Array<{ start: number; offset: number; json: string }>;
+    const dimension = x.profile.space.dimension;
+    const charges = rows.map(row => {
+      const elements = windows.get(row.start)!.elements.slice(row.offset, row.offset + 4);
+      return Buffer.byteLength(row.json) + elements.length * dimension * 8 + Buffer.byteLength(JSON.stringify(elements));
+    });
+    db.close();
+    const batchBudget = Math.max(...charges), totalBudget = charges.reduce((sum, charge) => sum + charge, 0);
+    assert.ok(totalBudget > batchBudget);
+    await assert.rejects(x.old.inspect(x.m.bookId, () => {}, { vectors: { maxBytes: batchBudget, visit: () => {} } }), /working-set quota/);
+    let streamed = 0;
+    await x.old.inspect(x.m.bookId, () => {}, { vectors: { maxBytes: batchBudget, streaming: true, visit: () => { streamed++; } } });
+    assert.equal(streamed, rows.length);
+  } finally { await rm(x.root, { recursive: true, force: true }); }
+});
+
 test("interrupted empty and schema-only initialization recover; populated orphan does not", async () => {
   const root = await mkdtemp(join(tmpdir(), "registry-init-"));
   const schema = "CREATE TABLE registry(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE vectors(generation TEXT,ordinal INTEGER,json TEXT NOT NULL,binding TEXT NOT NULL,PRIMARY KEY(generation,ordinal))";

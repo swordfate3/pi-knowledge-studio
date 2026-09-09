@@ -22,6 +22,8 @@ const MAX_VECTOR = 2 * 1024 * 1024;
 const LEASE_MS = 60_000;
 // Explicit working-set ceiling; this implementation does not claim unbounded book support.
 const MAX_CAPTURE_METADATA = 64 * 1024 * 1024;
+// Per-batch streaming ceiling for legacy imports. The complete vector store is
+// persisted in a private staging SQLite database instead of held in the heap.
 const MAX_IMPORT_VECTORS = 64 * 1024 * 1024;
 function hash(value: string) { return createHash("sha256").update(value).digest("hex"); }
 function exact(value: unknown, keys: string[]): asserts value is Record<string, unknown> {
@@ -207,8 +209,9 @@ export class PdfGenerations {
   async importLegacy(legacyRoot: string, bookId: string) {
     if (!/^book_[a-f0-9]{64}$/.test(bookId)) throw new Error("Invalid book ID");
     return this.directory(async root => {
-      const capture = randomUUID(), stage = join(root, `import-${capture}`); await mkdir(stage, { mode: 0o700 });
-      let published = false;
+      const capture = randomUUID(), stage = join(root, `import-${capture}`), stagingPath = join(root, `import-${capture}.vectors.sqlite`);
+      await mkdir(stage, { mode: 0o700 });
+      let published = false, staging: DatabaseSync | null = null;
       try {
         await withSafeDirectory(resolve(legacyRoot), resolve(legacyRoot), async source => {
           const names = await readdir(source);
@@ -217,25 +220,58 @@ export class PdfGenerations {
           await copyFileSafe(join(source, bookId + ".pdf"), join(stage, bookId + ".pdf"), this.quotas.maxInputBytes);
           await copyFileSafe(join(source, bookId + ".sqlite"), join(stage, bookId + ".sqlite"), this.quotas.maxStorageBytes / 2);
         });
-        const jobs = new PdfJobs(join(this.root, `import-${capture}`), this.quotas), batches: Array<{ elements: PdfWindow["elements"]; vectors: number[][] }> = [];
-        let totalBatches = 0;
-        const manifest = await jobs.inspect(bookId, w => {
-          totalBatches += Math.ceil(w.elements.length / 4);
-        }, { vectors: { maxBytes: MAX_IMPORT_VECTORS, visit: (elements, vectors) => { batches.push({ elements, vectors }); } } });
-        await rename(stage, join(root, capture));
-        const dir = await open(root, constants.O_RDONLY | constants.O_DIRECTORY); try { await dir.sync(); } finally { await dir.close(); }
-        const result = await this.control((r, db) => {
-          if (r.books.some(b => b.id === bookId)) throw new Error("Book already imported; original and generations unchanged");
-          const b: Book = { id: bookId, capture, sourceHash: manifest.sourceHash, active: null, epoch: 0 }; r.books.push(b);
-          if (manifest.state === "ready") {
-            const g: Generation = { id: randomUUID(), bookId, profile: null, space: manifest.space!, state: "ready", checkpoint: totalBatches, totalBatches, lease: null };
-            for (const [ordinal, batch] of batches.entries()) this.putBatch(db, g, ordinal, batch.elements, batch.vectors);
-            r.generations.push(g); b.active = g.id; b.epoch = 1;
-          }
-          return { book: b, manifest };
-        }, true);
-        published = true; return result;
-      } finally { if (!published) { await rm(stage, { recursive: true, force: true }); await rm(join(root, capture), { recursive: true, force: true }); } }
+        // Stage validated batches on disk. Holding every high-dimensional vector in
+        // an array made a valid large legacy book fail at an arbitrary heap budget.
+        const file = await open(stagingPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); await file.close();
+        staging = new DatabaseSync(stagingPath);
+        staging.exec(`PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; PRAGMA max_page_count=${Math.floor(this.quotas.maxStorageBytes / 2 / 4096)}; CREATE TABLE batches(ordinal INTEGER PRIMARY KEY,elements TEXT NOT NULL,vectors TEXT NOT NULL); BEGIN IMMEDIATE`);
+        const insert = staging.prepare("INSERT INTO batches VALUES(?,?,?)");
+        const jobs = new PdfJobs(join(this.root, `import-${capture}`), this.quotas);
+        let totalBatches = 0, nextOrdinal = 0;
+        try {
+          const manifest = await jobs.inspect(bookId, w => {
+            totalBatches += Math.ceil(w.elements.length / 4);
+          }, { vectors: { maxBytes: MAX_IMPORT_VECTORS, streaming: true, visit: (elements, vectors) => {
+            const elementsJson = JSON.stringify(elements), vectorsJson = JSON.stringify(vectors);
+            if (Buffer.byteLength(elementsJson) > MAX_IMPORT_VECTORS || Buffer.byteLength(vectorsJson) > MAX_VECTOR) throw new Error("Legacy vector import working-set quota exceeded");
+            insert.run(nextOrdinal++, elementsJson, vectorsJson);
+          } } });
+          if (manifest.state === "ready" && nextOrdinal !== totalBatches) throw new Error("Incomplete legacy vector stream");
+          staging.exec("COMMIT"); staging.close(); staging = null;
+          await rename(stage, join(root, capture));
+          const dir = await open(root, constants.O_RDONLY | constants.O_DIRECTORY); try { await dir.sync(); } finally { await dir.close(); }
+          const result = await this.control((r, db) => {
+            if (r.books.some(b => b.id === bookId)) throw new Error("Book already imported; original and generations unchanged");
+            const b: Book = { id: bookId, capture, sourceHash: manifest.sourceHash, active: null, epoch: 0 }; r.books.push(b);
+            if (manifest.state === "ready") {
+              const g: Generation = { id: randomUUID(), bookId, profile: null, space: manifest.space!, state: "ready", checkpoint: totalBatches, totalBatches, lease: null };
+              const staged = new DatabaseSync(stagingPath);
+              try {
+                const rows = staged.prepare("SELECT elements,vectors FROM batches WHERE ordinal=?");
+                for (let ordinal = 0; ordinal < totalBatches; ordinal++) {
+                  const row = rows.get(ordinal);
+                  if (!row) throw new Error("Incomplete staged legacy vectors");
+                  const elements = json<PdfWindow["elements"]>(row.elements, MAX_IMPORT_VECTORS);
+                  const vectors = json<number[][]>(row.vectors, MAX_VECTOR);
+                  if (!Array.isArray(elements) || !Array.isArray(vectors)) throw new Error("Malformed staged legacy vectors");
+                  this.putBatch(db, g, ordinal, elements, vectors);
+                }
+                if (staged.prepare("SELECT count(*) AS n FROM batches").get()?.n !== totalBatches) throw new Error("Extra staged legacy vectors");
+              } finally { staged.close(); }
+              r.generations.push(g); b.active = g.id; b.epoch = 1;
+            }
+            return { book: b, manifest };
+          }, true);
+          published = true; return result;
+        } catch (error) {
+          try { staging?.exec("ROLLBACK"); } catch { /* already closed or never started */ }
+          throw error;
+        } finally { if (staging) { staging.close(); staging = null; } }
+      } finally {
+        if (staging) staging.close();
+        await rm(stagingPath, { force: true });
+        if (!published) { await rm(stage, { recursive: true, force: true }); await rm(join(root, capture), { recursive: true, force: true }); }
+      }
     });
   }
   private putBatch(db: DatabaseSync, g: Generation, ordinal: number, elements: PdfWindow["elements"], result: number[][]) {

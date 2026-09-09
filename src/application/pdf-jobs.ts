@@ -277,10 +277,12 @@ export class PdfJobs {
   /** Metadata-only by default. Optional vectors are visited one batch at a time, with
    * SQL byte-length and numeric backing estimates charged BEFORE fetching/parsing JSON.
    * Metadata-only inspection does not authenticate vector payloads; readers do that separately.
+   * Streaming callers may set `streaming` to bound each callback working set rather than
+   * reject a book whose total vector store is larger than the in-memory budget.
    */
   async inspect(id: string, visit: (window: PdfWindow) => void, options: {
     signal?: AbortSignal;
-    vectors?: { maxBytes: number; visit: (elements: PdfWindow["elements"], vectors: number[][]) => void };
+    vectors?: { maxBytes: number; streaming?: boolean; visit: (elements: PdfWindow["elements"], vectors: number[][]) => void };
   } = {}) {
     return this.locked(id, async (db, prefix) => {
       const m = load(db); await this.verify(db, prefix, m, options.signal, true);
@@ -296,8 +298,9 @@ export class PdfJobs {
           const bytes = db.prepare("SELECT length(CAST(json AS BLOB)) AS bytes FROM batches WHERE start=? AND offset=? AND typeof(json)='text'").get(start, offset)?.bytes;
           // Charge serialized data + numeric storage + copied element metadata (not a total V8 heap cap).
           const backing = elements.length * m.space!.dimension * 8 + Buffer.byteLength(JSON.stringify(elements));
-          if (typeof bytes !== "number" || bytes > 8388608 || bytes + backing > remaining) throw new Error("Legacy vector import working-set quota exceeded");
-          remaining -= bytes + backing;
+          const charge = typeof bytes === "number" ? bytes + backing : Number.POSITIVE_INFINITY;
+          if (typeof bytes !== "number" || bytes > 8388608 || (options.vectors.streaming ? charge > options.vectors.maxBytes : charge > remaining)) throw new Error("Legacy vector import working-set quota exceeded");
+          if (!options.vectors.streaming) remaining -= charge;
           options.vectors.visit(elements, this.readBatch(db, m, w, offset));
         }
       }
