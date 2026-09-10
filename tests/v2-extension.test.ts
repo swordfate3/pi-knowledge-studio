@@ -141,21 +141,19 @@ test("generation approves actual bundle before egress and all sharing before exp
   const approvals: string[] = [];
   const ctx = context(cwd, async (title, message) => {
     approvals.push(title.split(": ")[1]!);
-    if (title.endsWith("generate")) {
-      assert.match(message, /Hello evidence/);
-      assert.match(message, /revisionHash/);
-      assert.match(message, /No PNG bytes/);
-      assert.match(message, /Request deadline: 180000 ms/);
-      assert.doesNotMatch(message, /fixture-key/);
-      const preview = JSON.parse(message.slice(message.indexOf("\n") + 1));
-      assert.equal(preview.question, "Hello");
-      assert.equal(preview.title, "Report");
-      assert.equal(preview.figurePolicy, "selective");
-    }
-    if (title.endsWith("export")) {
-      assert.match(message, /supplementary excerpts/);
-      assert.match(message, /INCLUDING metadata/);
-    }
+    if (title.endsWith("import")) return true;
+    assert.equal(title, "Knowledge Studio V2: generate");
+    assert.match(message, /允许 Studio 一次完成这次生成吗/);
+    assert.match(message, /Hello evidence/);
+    assert.match(message, /revisionHash/);
+    assert.match(message, /PNG.*(?:bytes|字节)/);
+    assert.match(message, /180000 ms/);
+    assert.doesNotMatch(message, /fixture-key/);
+    const preview = JSON.parse(message.slice(message.lastIndexOf("\n") + 1));
+    assert.equal(preview.bundle.texts[0].text, "Hello evidence");
+    assert.equal(preview.question, "Hello");
+    assert.equal(preview.title, "Report");
+    assert.equal(preview.figurePolicy, "selective");
     return true;
   });
   await writeFile(join(cwd, "input.txt"), "Hello evidence");
@@ -215,7 +213,7 @@ test("generation approves actual bundle before egress and all sharing before exp
   );
   assert.match(JSON.stringify(result), /model-generated/);
   assert.match(JSON.stringify(result), /semanticProof/);
-  assert.deepEqual(approvals, ["import", "search", "generate", "export"]);
+  assert.deepEqual(approvals, ["import", "generate"]);
   assert.equal(network.mock.callCount(), 1);
   assert.deepEqual(
     timeout.mock.calls.map((call) => call.arguments[0]),
@@ -266,11 +264,12 @@ test("generation honors none, selective and required with host-linked answer fig
       }, context(cwd, async (title, message) => {
         approvals.push(title.split(": ")[1]!);
         if (title.endsWith("generate")) {
-          const preview = JSON.parse(message.slice(message.indexOf("\n") + 1));
+          const preview = JSON.parse(message.slice(message.lastIndexOf("\n") + 1));
           assert.equal(preview.question, question);
           assert.equal(preview.title, "Separate display title");
           assert.equal(preview.figurePolicy, policy);
         }
+        assert.equal(title, "Knowledge Studio V2: generate");
         return true;
       }));
       const content = response.content[0]!;
@@ -283,7 +282,7 @@ test("generation honors none, selective and required with host-linked answer fig
       assert.equal(result.assessment.figures.length, policy === "required" ? 1 : 0);
       const markdown = await readFile(join(result.path, "document.md"), "utf8");
       assert.equal(markdown.includes("!["), policy === "required");
-      assert.deepEqual(approvals, ["search", "generate", "export"]);
+      assert.deepEqual(approvals, ["generate"]);
       assert.equal(network.mock.callCount(), 1);
     } finally {
       network.mock.restore();
@@ -462,13 +461,13 @@ test("PDF import returns explicit capture limitations", async (t) => {
   assert.match(JSON.stringify(result), /decoded_embedded/);
 });
 
-test("source changes after model response block export", async (t) => {
+test("source changes after bundled approval block model and export", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-stale-export-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   await writeFile(join(cwd, "input.txt"), "Hello evidence");
   const tools = registerFor(cwd, modelEnv);
   const ctx = context(cwd, async (title) => {
-    if (title.endsWith("export")) {
+    if (title.endsWith("generate")) {
       const kb = new KnowledgeRuntime(
         join(cwd, ".pi", "knowledge-studio", "collections", "demo"),
       );
@@ -526,9 +525,9 @@ test("source changes after model response block export", async (t) => {
     ),
     /Sources changed during generation/,
   );
-  assert.deepEqual(
-    await readdir(join(cwd, ".pi", "knowledge-studio", "exports", "report")),
-    [],
+  await assert.rejects(
+    readdir(join(cwd, ".pi", "knowledge-studio", "exports", "report")),
+    { code: "ENOENT" },
   );
 });
 
@@ -878,7 +877,7 @@ const rerankEnv = {
   PI_KS_V2_RERANK_REVISION: "revision-1",
   PI_KS_V2_RERANK_API_KEY: "rerank-secret-fixture",
 };
-const retrievalTools = ["search", "generate", "export"] as const;
+const rerankApprovalTools = ["search", "export"] as const;
 const rerankParams = {
   collection: "demo",
   query: "Hello",
@@ -894,7 +893,15 @@ test("rerank configuration and distinct consent fail closed for all retrieval to
   const network = t.mock.method(globalThis, "fetch", async () => {
     throw new Error("unexpected network");
   });
-  for (const name of retrievalTools) {
+  await writeFile(join(cwd, "input.txt"), "Hello evidence");
+  const setupTools = registerFor(cwd, { ...modelEnv, ...rerankEnv });
+  await invoke(
+    setupTools,
+    "ks_v2_import",
+    { collection: "demo", path: "input.txt" },
+    context(cwd, async () => true),
+  );
+  for (const name of rerankApprovalTools) {
     for (const key of ["ENDPOINT", "MODEL", "REVISION"]) {
       await assert.rejects(
         invoke(
@@ -966,7 +973,6 @@ test("rerank configuration and distinct consent fail closed for all retrieval to
     );
   }
   assert.equal(network.mock.callCount(), 0);
-  assert.deepEqual(await readdir(cwd), []);
 });
 
 test("default and explicit false never call reranker or require rerank config", async (t) => {
@@ -1114,9 +1120,10 @@ test("approved local rerank sends query and 30 originals, preserves authority ac
     ),
     /generate denied/,
   );
-  assert.equal(requests.length, 3);
+  // The denied generation is stopped at the bundled approval, before reranking.
+  assert.equal(requests.length, 2);
   malicious = true;
-  for (const name of retrievalTools) {
+  for (const name of ["search", "generate", "export"] as const) {
     await assert.rejects(
       invoke(tools, `ks_v2_${name}`, rerankParams, ctx),
       /Invalid rerank index or score/,

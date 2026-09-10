@@ -96,6 +96,11 @@ removes temporary artifacts by default; use `--keep` to preserve a new run.
 
 The generation mock returns only `status`, `requirements`, `figures` and `blocks`:
 requirements are supported by existing text IDs; paragraphs carry `requirementIds`;
+interactive `ks_v2_generate` now uses one bundled confirmation for retrieval,
+optional hybrid/reranking, generation-model egress and automatic export. The
+historical sequence below keeps its 14 tool executions and measurements, but
+`ks_v2_generate` no longer presents separate generation and export prompts.
+
 selected figures use a host candidate occurrence linked to that supported text,
 with an explicit illustration justification. No legacy AST fallback is supplied.
 The harness checks the original question (“How does the synthetic semaphore wake
@@ -111,7 +116,7 @@ These fixture support judgments are deterministic, not entailment verification.
 | 3 | `ks_v2_list` | Imported document visible |
 | 4–5 | `ks_v2_index` | Approve index but reject embedding: zero embedding requests; then approve both |
 | 6 | `ks_v2_search` | Hybrid query returns text and linked original-image evidence |
-| 7–8 | `ks_v2_generate` | Reject generation after search: zero generation requests; then approve generation and export |
+| 7–8 | `ks_v2_generate` | Reject the single bundled generation workflow: zero generation requests; then approve the bundled retrieval/model/export workflow |
 | 9–10 | `ks_v2_export` | Reject without filesystem changes; then export evidence package |
 | 11–12 | `ks_v2_list`, `ks_v2_search` | Stop Pi, start a new process, recover identical document listing and text evidence |
 | 13–14 | `ks_v2_remove`, `ks_v2_list` | Reject removal without filesystem changes; document remains |
