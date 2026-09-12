@@ -93,7 +93,11 @@ test("registered generation sends exact disclosed question/bundle/host links and
     assert.deepEqual(Object.keys(request).sort(), ["messages", "model", "response_format"]);
     assert.equal(request.response_format.json_schema.name, "grounded_answer_v2");
     const input = JSON.parse(request.messages[1].content);
-    assert.deepEqual(disclosed, input);
+    const approvedInput = structuredClone(disclosed) as Record<string, unknown>;
+    // The bundled confirmation also discloses the request deadline; the model
+    // payload intentionally omits that control because it is not source input.
+    delete approvedInput.requestDeadlineMs;
+    assert.deepEqual(approvedInput, input);
     assert.equal(input.question, params.query);
     assert.equal(input.title, params.title);
     assert.equal(input.figurePolicy, "selective");
@@ -103,13 +107,13 @@ test("registered generation sends exact disclosed question/bundle/host links and
   });
   const result = await invoke(tools, "ks_v2_generate", { ...params, hostDerivedFigureCandidates: [{ caption: "ATTACK" }] }, context(cwd, async (title, message) => {
     approvals.push(title.split(": ")[1]!);
-    if (title.endsWith("generate")) disclosed = JSON.parse(message.slice(message.indexOf("\n") + 1));
+    if (title.endsWith("generate")) disclosed = JSON.parse(message.slice(message.lastIndexOf("\n") + 1));
     return true;
   }));
   assert.equal((result.details as Record<string, unknown>).status, "answered");
   assert.equal((result.details as Record<string, unknown>).generatedByModel, true);
   assert.equal((result.details as Record<string, unknown>).semanticProof, false);
-  assert.deepEqual(approvals, ["search", "generate", "export"]);
+  assert.deepEqual(approvals, ["generate"]);
   assert.equal((await readdir(join(cwd, ".pi", "knowledge-studio", "exports", "report"))).length, 1);
 });
 
@@ -126,7 +130,7 @@ test("insufficient model judgment and exact empty retrieval return assessment wi
     assert.equal((result.details as Record<string, unknown>).path, undefined);
   }
   assert.equal(network.mock.callCount(), 1);
-  assert.deepEqual(approvals, ["search", "generate", "search"]);
+  assert.deepEqual(approvals, ["generate"]);
   assert.ok(!(await readdir(join(cwd, ".pi", "knowledge-studio"))).includes("exports"));
   for (const message of ["database failed", "timeout", "No relevant evidence found: timeout"]) {
     const mocked = t.mock.method(KnowledgeRuntime.prototype, "search", async () => { throw new Error(message); });
@@ -135,8 +139,8 @@ test("insufficient model judgment and exact empty retrieval return assessment wi
   }
 });
 
-test("denials and epoch changes gate new generation and export", async t => {
-  for (const stage of ["deny-search", "deny-generate", "deny-export", "epoch-generate", "epoch-response", "epoch-export"]) {
+test("bundled generation denial and epoch changes gate model and export", async t => {
+  for (const stage of ["deny-generate", "epoch-generate", "epoch-response"]) {
     const { cwd, tools, kb } = await fixture(t);
     const remove = async () => { await kb.remove((await kb.list())[0]!.id); };
     const network = t.mock.method(globalThis, "fetch", async (_url: string | URL | Request, init?: RequestInit) => {
@@ -145,10 +149,11 @@ test("denials and epoch changes gate new generation and export", async t => {
       return response(wire(input.bundle));
     });
     await assert.rejects(invoke(tools, "ks_v2_generate", params, context(cwd, async title => {
-      if (stage === `epoch-${title.split(": ")[1]}`) await remove();
-      return stage !== `deny-${title.split(": ")[1]}`;
+      assert.equal(title, "Knowledge Studio V2: generate");
+      if (stage === "epoch-generate") await remove();
+      return stage !== "deny-generate";
     })), /denied|Sources changed during generation/);
-    assert.equal(network.mock.callCount(), ["deny-search", "deny-generate", "epoch-generate"].includes(stage) ? 0 : 1);
+    assert.equal(network.mock.callCount(), stage === "epoch-response" ? 1 : 0);
     if ((await readdir(join(cwd, ".pi", "knowledge-studio"))).includes("exports"))
       assert.deepEqual(await readdir(join(cwd, ".pi", "knowledge-studio", "exports", "report")), []);
     network.mock.restore();

@@ -99,6 +99,13 @@ type Grant =
   | "enrich"
   | "rerank";
 
+type GenerationApproval = {
+  readonly operationId: symbol;
+  readonly context: ExtensionContext;
+  readonly signal: AbortSignal;
+  readonly grants: readonly Grant[];
+};
+
 function confined(cwd: string, input: string): string {
   if (
     !input ||
@@ -222,24 +229,63 @@ export default function v2(pi: ExtensionAPI): void {
         (value): value is AbortSignal => value !== undefined,
       ),
     );
+  const generationTokens = new WeakMap<GenerationApproval, symbol>();
   async function approve(
     ctx: ExtensionContext,
     signal: AbortSignal,
     grant: Grant,
     message: string,
+    generationApproval?: GenerationApproval,
   ) {
     signal.throwIfAborted();
-    const ok = ctx.hasUI
-      ? await ctx.ui.confirm(`Knowledge Studio V2: ${grant}`, message, {
-          signal,
-          timeout: 120_000,
-        })
-      : grants.has(grant);
+    const approvedByWorkflow =
+      generationApproval !== undefined &&
+      ctx.hasUI &&
+      generationTokens.get(generationApproval) === generationApproval.operationId &&
+      generationApproval.context === ctx &&
+      generationApproval.signal === signal &&
+      generationApproval.grants.includes(grant);
+    const ok = approvedByWorkflow
+      ? true
+      : ctx.hasUI
+        ? await ctx.ui.confirm(`Knowledge Studio V2: ${grant}`, message, {
+            signal,
+            timeout: 120_000,
+          })
+        : grants.has(grant);
     signal.throwIfAborted();
     if (ok !== true)
       throw new Error(
         `V2 ${grant} denied: trusted UI confirmation or host PI_KS_V2_HEADLESS_GRANTS required`,
       );
+  }
+  // A normal generation is one user action, not a chain of interactive prompts.
+  // Headless hosts still authorize each capability at its actual boundary through
+  // approve(); only the interactive UI gets this scoped, operation-bound token.
+  async function approveGenerationWorkflow(
+    ctx: ExtensionContext,
+    signal: AbortSignal,
+    message: string,
+    workflowGrants: readonly Grant[],
+  ): Promise<GenerationApproval | undefined> {
+    signal.throwIfAborted();
+    if (!ctx.hasUI) return undefined;
+    const ok = await ctx.ui.confirm("Knowledge Studio V2: generate", message, {
+      signal,
+      timeout: 120_000,
+    });
+    signal.throwIfAborted();
+    if (ok !== true)
+      throw new Error("V2 generate denied: generation workflow was not approved");
+    const operationId = Symbol("generation-workflow");
+    const approval = Object.freeze({
+      operationId,
+      context: ctx,
+      signal,
+      grants: Object.freeze([...workflowGrants]),
+    });
+    generationTokens.set(approval, operationId);
+    return approval;
   }
   async function runtime(
     ctx: ExtensionContext,
@@ -261,6 +307,7 @@ export default function v2(pi: ExtensionAPI): void {
     ctx: ExtensionContext,
     signal: AbortSignal,
     purpose: "query" | "document",
+    generationApproval?: GenerationApproval,
   ): Promise<EmbeddingProvider> {
     const required = (key: string) => {
       const value = env[`PI_KS_V2_EMBED_${key}`];
@@ -303,6 +350,7 @@ export default function v2(pi: ExtensionAPI): void {
       signal,
       "embedding",
       `Send ${purpose === "document" ? "ALL collection text chunks" : "the search query"} to ${url.href}\nModel: ${JSON.stringify(space)}\nThe host API key, if set, is sent as a Bearer header. No images are sent.`,
+      generationApproval,
     );
     const provider = new HttpEmbeddingProvider({
       endpoint,
@@ -372,6 +420,7 @@ export default function v2(pi: ExtensionAPI): void {
     signal: AbortSignal,
     collection: string,
     query: string,
+    generationApproval?: GenerationApproval,
   ): Promise<Reranker> {
     const required = (key: string) => {
       const value = env[`PI_KS_V2_RERANK_${key}`];
@@ -394,22 +443,26 @@ export default function v2(pi: ExtensionAPI): void {
         "Host PI_KS_V2_RERANK_TIMEOUT_MS must be a strict integer 1..180000",
       );
     // Constructor validates the exact URL and public identity before any consent/egress.
-    const provider = new HttpReranker({
+    const options = {
       endpoint: required("ENDPOINT"),
       model: required("MODEL"),
       revision: required("REVISION"),
-      approved: true,
       ...(env.PI_KS_V2_RERANK_API_KEY
         ? { apiKey: env.PI_KS_V2_RERANK_API_KEY }
         : {}),
       ...(rawTimeout === undefined ? {} : { timeoutMs: Number(rawTimeout) }),
-    });
+    };
+    // Validate the public identity before consent, but do not create a request-
+    // capable provider until the capability has been approved.
+    const previewProvider = new HttpReranker({ ...options, approved: false });
     await approve(
       ctx,
       signal,
       "rerank",
-      `Send query ${JSON.stringify(query)} and up to 30 ORIGINAL candidate texts (meaning stored capture values: native extraction OR UNVERIFIED OCR transcripts, NOT verified original quotations) from collection ${JSON.stringify(collection)} to the rerank endpoint below? This includes candidates NOT present in returned hits, not merely the requested result limit. No images are sent. Host API key, if set, is sent as Bearer. Request deadline: ${rawTimeout ?? 30_000} ms. Response can reorder candidates only; it has no source authority.\n${JSON.stringify(provider.identity)}`,
+      `Send query ${JSON.stringify(query)} and up to 30 ORIGINAL candidate texts (meaning stored capture values: native extraction OR UNVERIFIED OCR transcripts, NOT verified original quotations) from collection ${JSON.stringify(collection)} to the rerank endpoint below? This includes candidates NOT present in returned hits, not merely the requested result limit. No images are sent. Host API key, if set, is sent as Bearer. Request deadline: ${rawTimeout ?? 30_000} ms. Response can reorder candidates only; it has no source authority.\n${JSON.stringify(previewProvider.identity)}`,
+      generationApproval,
     );
+    const provider = new HttpReranker({ ...options, approved: true });
     return {
       async rerank(query, candidates) {
         signal.throwIfAborted();
@@ -850,7 +903,7 @@ export default function v2(pi: ExtensionAPI): void {
     name: "ks_v2_generate",
     label: "V2 grounded generation",
     description:
-      "Search evidence, approve actual text/metadata outbound to the host generation model, then approve portable MD/HTML/PNG export. Model-generated, not semantic proof. Insufficient retrieved evidence returns status/assessment without export. Figure policy defaults to selective. Requires search, generate and (only when answered) export approvals; hybrid also requires embedding approval. Optional rerank requires separate approval to send query and up to 30 native capture or unverified OCR candidate texts.",
+      "One confirmation for a normal generation workflow: retrieve evidence, optionally use hybrid embedding/reranking, send the selected bundle to the configured generation model, and save the resulting portable package. Model-generated, not semantic proof. Insufficient retrieved evidence returns status/assessment without export. Figure policy defaults to selective. Headless hosts still need the underlying search, generate, export, embedding and rerank grants when those capabilities are used. Separate tools keep their own confirmations.",
     parameters: Type.Object({
       collection: collectionSchema,
       query: querySchema,
@@ -871,31 +924,102 @@ export default function v2(pi: ExtensionAPI): void {
           throw new Error("Invalid output directory name");
         const generation = answerGenerationFromEnv(env);
         const config = Object.freeze({ ...modelConfig("GENERATE"), ...(generation === undefined ? {} : { generation }) });
-        await approve(
-          ctx,
-          active,
-          "search",
-          `Retrieve evidence from ${params.collection} for generation and disclose selected source metadata/excerpts to trusted confirmation UI? Query: ${JSON.stringify(params.query)}`,
-        );
-        const reranker =
-          params.rerank === true
-            ? await reranking(ctx, active, params.collection, params.query)
-            : undefined;
-        const provider =
-          params.mode === "hybrid"
-            ? await embedding(ctx, active, "query")
-            : undefined;
+        const cwd = resolve(ctx.cwd);
+        const base = storagePaths(cwd).exports;
+        const output = join(base, params.output);
+        const useReranker = params.rerank === true;
+        const useEmbedding = params.mode === "hybrid";
+        const workflowGrants: Grant[] = ["search", "generate", "export"];
+        if (useEmbedding) workflowGrants.push("embedding");
+        if (useReranker) workflowGrants.push("rerank");
+        // Headless hosts authorize each capability before its first provider call.
+        // Interactive hosts defer provider construction until the single bundled
+        // confirmation has returned its scoped token.
+        let provider: EmbeddingProvider | undefined;
+        let reranker: Reranker | undefined;
+        if (!ctx.hasUI) {
+          await approve(
+            ctx,
+            active,
+            "search",
+            `Read evidence from collection ${JSON.stringify(params.collection)} for the generation workflow?`,
+          );
+          if (useEmbedding) provider = await embedding(ctx, active, "query");
+          if (useReranker) reranker = await reranking(ctx, active, params.collection, params.query);
+        }
+        let generationApproval: GenerationApproval | undefined;
+        const workflowSummary =
+          `允许 Studio 一次完成这次生成吗？\n\n` +
+          `本次会：\n` +
+          `1. 从集合 ${JSON.stringify(params.collection)} 检索与问题相关的证据；\n` +
+          (useEmbedding
+            ? `2. 将查询发送到 embedding 服务 ${JSON.stringify(env.PI_KS_V2_EMBED_ENDPOINT)}；\n`
+            : "2. 使用本地检索，不发送查询到 embedding 服务；\n") +
+          (useReranker
+            ? "3. 将查询和最多 30 条候选文本发送到 reranker；\n"
+            : "3. 不使用 reranker；\n") +
+          `4. 将问题、标题和选中的证据文本/元数据发送到生成模型 ${JSON.stringify(config.model)}（${config.endpoint}）；\n` +
+          `5. 仅当模型返回结构完整且证据引用有效的答案时，自动保存到 ${JSON.stringify(output)}；证据不足时不写包。\n\n` +
+          `Generation profile/controls: ${JSON.stringify(config.generation ?? null)}（null 表示服务端默认值）；请求截止时间 ${config.timeoutMs ?? 30_000} ms。\n` +
+          `不会把 PNG 原图字节发送给生成模型；导出的本地文档包可包含生成正文/图注、补充摘录、原始图片或 OCR 页面渲染、元数据、PNG 展示副本及来源/provenance，且不脱敏。返回路径会进入当前会话/模型日志。模型调用可能产生费用，生成文字仍需校阅。`;
+        const approveWorkflow = (details: unknown) =>
+          approveGenerationWorkflow(
+            ctx,
+            active,
+            `${workflowSummary}\n${JSON.stringify(details)}`,
+            workflowGrants,
+          );
         const kb = await runtime(ctx, params.collection);
-        let retrieved: Awaited<ReturnType<KnowledgeRuntime["search"]>>;
+        type Retrieved = Awaited<ReturnType<KnowledgeRuntime["search"]>>;
+        const noEvidence = (error: unknown) =>
+          error instanceof Error && error.message === "No relevant evidence found";
+        const emptyResult = () => {
+          const result = {
+            ...emptyAnswer(params.query),
+            generatedByModel: false,
+            semanticProof: false,
+            notice: INSUFFICIENT_ANSWER_NOTICE,
+          };
+          return { ...reply(result), details: result };
+        };
+
+        // First retrieve locally. This gives the one confirmation a real evidence
+        // preview while still keeping every provider call behind that confirmation.
+        let lexical: Retrieved | undefined;
         try {
-          retrieved = await kb.search(params.query, params.limit ?? 5, provider, reranker);
+          lexical = await kb.search(params.query, params.limit ?? 5);
         } catch (error) {
           active.throwIfAborted();
-          // Only this exact runtime empty case is abstention; transport/storage errors propagate.
-          if (!(error instanceof Error) || error.message !== "No relevant evidence found") throw error;
-          const result = { ...emptyAnswer(params.query), generatedByModel: false, semanticProof: false, notice: INSUFFICIENT_ANSWER_NOTICE };
-          return { ...reply(result), details: result };
+          if (!noEvidence(error)) throw error;
+          if (provider === undefined && reranker === undefined) return emptyResult();
         }
+        if (useEmbedding || useReranker) {
+          generationApproval = await approveWorkflow({
+            preview: lexical?.bundle ?? null,
+            question: params.query,
+            title: params.title,
+            figurePolicy,
+            collection: params.collection,
+            output,
+            workflow: workflowGrants,
+            note: "The lexical preview is provisional. Hybrid embedding/RRF/reranking may reorder or reduce the final evidence. This approval covers the displayed lexical candidates and the bounded transformation: the embedding service receives this query; the reranker may receive the query and up to 30 original candidate texts (including candidates not in the final hits), never images. The final bundle may differ within that candidate scope; it has no new source authority.",
+          });
+          await checkEpoch(kb, lexical?.bundle.snapshotId ?? `epoch_${await SqliteCatalog.use(kb.root, async catalog => catalog.epoch())}`, active);
+          if (useEmbedding) provider = await embedding(ctx, active, "query", generationApproval);
+          if (useReranker) reranker = await reranking(ctx, active, params.collection, params.query, generationApproval);
+        }
+
+        let retrieved: Retrieved | undefined = lexical;
+        if (useEmbedding || useReranker) {
+          try {
+            retrieved = await kb.search(params.query, params.limit ?? 5, provider, reranker);
+          } catch (error) {
+            active.throwIfAborted();
+            if (!noEvidence(error)) throw error;
+            return emptyResult();
+          }
+        }
+        if (retrieved === undefined) return emptyResult();
         const bundle = structuredClone(retrieved.bundle);
         const hostDerivedFigureCandidates = await SqliteCatalog.use(kb.root, async catalog =>
           buildAnswerContext(bundle, catalog.snapshot()),
@@ -903,11 +1027,21 @@ export default function v2(pi: ExtensionAPI): void {
         freezeAnswerTree(bundle);
         freezeAnswerTree(hostDerivedFigureCandidates);
         validateAnswerInput(bundle, params.query, params.title, figurePolicy, hostDerivedFigureCandidates);
+        if (!useEmbedding && !useReranker)
+          generationApproval = await approveWorkflow({
+            bundle,
+            question: params.query,
+            title: params.title,
+            figurePolicy,
+            hostDerivedFigureCandidates,
+            requestDeadlineMs: config.timeoutMs ?? 30_000,
+          });
         await approve(
           ctx,
           active,
           "generate",
           `Send the following original question, separate display title, figure policy, entire evidence bundle (including OCR provenance assets), and host-derived candidate captions and text linkage (untrusted text, source labels, locators, hashes and image metadata) to ${config.endpoint}, model ${JSON.stringify(config.model)}? Request deadline: ${config.timeoutMs ?? 30_000} ms. Generation profile/controls: ${JSON.stringify(config.generation ?? null)} (null means server defaults). No PNG bytes are sent. Host API key, if set, is sent as Bearer. This can incur costs. References are checked, NOT semantic proof.\n${JSON.stringify({ bundle, question: params.query, title: params.title, figurePolicy, hostDerivedFigureCandidates })}`,
+          generationApproval,
         );
         await checkEpoch(kb, bundle.snapshotId, active);
         const answer = await generateAnswer(
@@ -924,14 +1058,12 @@ export default function v2(pi: ExtensionAPI): void {
           return { ...reply(result), details: result };
         }
         const document = answer.document;
-        const cwd = resolve(ctx.cwd),
-          base = storagePaths(cwd).exports,
-          output = join(base, params.output);
         await approve(
           ctx,
           active,
           "export",
           `Write model-generated portable package to ${JSON.stringify(output)}? Approve ALL generated body text/captions, selected supplementary excerpts, original PNG/JPEG/WebP bytes or derived OCR page renders INCLUDING metadata, PNG renditions, and source labels/provenance. No redaction. Artifacts may later be shared; returned path goes to this conversation/provider/session log. Generated text remains untrusted, not semantic proof.\n${JSON.stringify({ document, bundle })}`,
+          generationApproval,
         );
         await privateDirectory(storagePaths(cwd).root, base);
         await privateDirectory(storagePaths(cwd).root, output);

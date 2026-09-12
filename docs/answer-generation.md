@@ -11,11 +11,19 @@ rerank settings are unchanged. Optional `figurePolicy` is `none`, `selective`
 (default), or `required`. The original `query` is the generation **question**;
 the title is only a separate display title.
 
-Search approval precedes retrieval. Hybrid embedding and optional reranking keep
-their separate configuration and approvals. Generation approval discloses the
-exact question, title, policy, complete bundle (including OCR assets/provenance),
-and host-derived figure candidate captions/text linkage sent to the model.
-No image bytes are sent. The host API key remains out of previews.
+For standalone retrieval, search approval precedes retrieval; hybrid embedding and
+reranking retain their own configuration and approvals. A normal interactive
+`ks_v2_generate` call instead uses one bundled workflow confirmation covering local
+retrieval, optional hybrid/reranking, generation-model egress and automatic export
+of a valid answer. That confirmation discloses the exact question, title, policy,
+complete lexical preview/bundle (including OCR assets/provenance), and host-derived
+figure candidate captions/text linkage sent to the model. The lexical preview is
+provisional: hybrid/RRF/reranking may reorder or reduce evidence only within the
+displayed candidate scope. Embedding receives the query; reranking may receive the
+query and up to 30 original candidate texts, including candidates not in final
+hits, never images. No image bytes are sent to the generation model, and the host
+API key remains out of previews. Headless generation still requires the underlying
+capability grants at their actual boundaries.
 
 Figure candidates come only from the active catalog snapshot and bundle text IDs.
 The host checks the epoch, source revision, text identity/excerpt/locator and
@@ -59,10 +67,12 @@ Library callers use `AnswerModelOptions extends GroundedModelOptions`, with opti
 from `src/adapters/models/answer-model-options.ts`. Runtime validation rejects
 unknown profile fields and invalid types/ranges before dispatch. The adapter deeply
 clones/freezes caller options; the extension uses its immutable registration-time
-host snapshot. Approval shows the explicit profile and controls, or null for server
-defaults, alongside the existing endpoint/model/deadline and complete disclosure;
-no API key is displayed. Refusing approval prevents generation egress. Headless
-use still requires the explicit host `generate` grant; there are no tool overrides.
+host snapshot. Approval shows the explicit profile and controls, or null for server defaults,
+alongside the existing endpoint/model/deadline and complete disclosure; no API key
+is displayed. In interactive generation this is part of the bundled workflow
+confirmation; refusing it prevents the workflow's model egress. Headless use still
+requires the explicit host `generate` grant (and the other grants actually used),
+and standalone tools retain their separate gates; there are no tool overrides.
 
 Mapping evidence is pinned llama.cpp commit
 [`1464c62d88f699ec9700c8010bbfdbc603a9efd6`](https://github.com/ggml-org/llama.cpp/commit/1464c62d88f699ec9700c8010bbfdbc603a9efd6):
@@ -86,11 +96,13 @@ there are no retries, fallback, response repair, relaxed coverage or export gate
 ## Results and export
 
 - `answered`: structured status/assessment plus `generatedByModel: true` and
-  `semanticProof: false`. Export still requires separate approval of the complete
-  document, bundle, original images/derived OCR assets, and excerpts. The original
-  retrieval bundle is passed unchanged to export: illustration policy does not
-  remove OCR provenance assets. Source epoch is rechecked before model dispatch,
-  after the response, and before export.
+  `semanticProof: false`. In interactive `ks_v2_generate`, export of the valid
+  answer is covered by the same bundled workflow confirmation; standalone
+  `ks_v2_export` still requires its own approval of the complete document, bundle,
+  original images/derived OCR assets, and excerpts. The original retrieval bundle
+  is passed unchanged to export: illustration policy does not remove OCR provenance
+  assets. Source epoch is rechecked before model dispatch, after the response, and
+  before export.
 - `insufficient-evidence`: host-owned message explicitly limited to retrieved
   evidence, structured assessment/reasons, and `document: null`. There is no export
   approval, output directory creation, or output package. Model assessment is
@@ -170,8 +182,10 @@ insufficiency still performs approval/input checks and sends no model request.
   schema uses objects, arrays, strings and nonempty enums, without mixed-block
   `anyOf`. Host validation independently enforces coverage and budgets.
 
-The one bounded request, immutable approved snapshot, no retries/fallbacks and
-independent search/embedding/rerank/generation/export approvals are unchanged.
+The one bounded request, immutable approved snapshot and no retries/fallbacks are
+unchanged. Interactive `ks_v2_generate` bundles the normal workflow confirmation;
+headless execution still enforces independent search/embedding/rerank/generation/
+export grants, and standalone tools retain their individual approvals.
 Telemetry retains its existing count keys: `emptyBlocks` now means empty wire
 paragraphs; `undisplayedFigures` is always zero because display is host-owned.
 `uncoveredRequirements` and `missingEvidenceMappings` retain their meanings.
