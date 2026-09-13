@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { open, lstat, rename, unlink } from "node:fs/promises";
+import { open, lstat, readdir, rename, unlink } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -37,9 +37,20 @@ export interface PdfJobLimits { maxInputBytes: number; maxStorageBytes: number }
 export const DEFAULT_PDF_JOB_LIMITS: PdfJobLimits = { maxInputBytes: 512 * 1024 * 1024, maxStorageBytes: 4 * 1024 ** 3 };
 export interface PdfJobManifest {
   version: typeof VERSION; bookId: string; sourceHash: string; sourceBytes: number;
+  /** Original leaf filename for a human-facing label. Older durable jobs omit it. */
+  sourceName?: string;
   limits: PdfJobLimits; totalPages: number | null; parsedPages: number;
   indexedWindows: number; batchOffset: number; space: EmbeddingSpace | null;
   state: "parsing" | "parsed" | "indexing" | "ready";
+}
+export interface PdfJobBookSummary {
+  bookId: string;
+  title: string;
+  sourceBytes: number;
+  totalPages: number | null;
+  parsedPages: number;
+  state: PdfJobManifest["state"] | "unavailable";
+  searchable: boolean;
 }
 interface Element { id: string; page: number; text: string }
 interface Image { hash: string; page: number; elementIds: string[] }
@@ -61,9 +72,14 @@ function space(value: EmbeddingSpace): string {
   if (!positive(value.dimension) || value.dimension > 8192) throw new Error("Invalid PDF job dimension");
   return JSON.stringify([value.provider, value.model, value.revision, value.dimension, value.queryInstruction, value.documentInstruction]);
 }
+function validSourceName(value: unknown): value is string {
+  return typeof value === "string" && Boolean(value.trim()) && value.length <= 512 && !/[\x00-\x1f\x7f/\\]/u.test(value);
+}
 function validate(m: PdfJobManifest) {
-  exact(m, ["version", "bookId", "sourceHash", "sourceBytes", "limits", "totalPages", "parsedPages", "indexedWindows", "batchOffset", "space", "state"]);
+  const keys = ["version", "bookId", "sourceHash", "sourceBytes", "limits", "totalPages", "parsedPages", "indexedWindows", "batchOffset", "space", "state"];
+  exact(m, "sourceName" in m ? [...keys, "sourceName"] : keys);
   limits(m.limits);
+  if (m.sourceName !== undefined && !validSourceName(m.sourceName)) throw new Error("Invalid PDF source name");
   if (m.version !== VERSION || !HASH.test(m.sourceHash) || m.bookId !== `book_${m.sourceHash}` || !positive(m.sourceBytes) || m.sourceBytes > m.limits.maxInputBytes || !nonnegative(m.parsedPages) || !nonnegative(m.indexedWindows) || !nonnegative(m.batchOffset) || m.batchOffset % BATCH !== 0 || !["parsing", "parsed", "indexing", "ready"].includes(m.state)) throw new Error("Invalid PDF job manifest");
   if (m.totalPages === null ? m.parsedPages !== 0 : !positive(m.totalPages) || m.parsedPages > m.totalPages) throw new Error("Invalid PDF job page checkpoint");
   if (m.parsedPages !== m.totalPages && m.parsedPages % 5 !== 0) throw new Error("Invalid PDF job window checkpoint");
@@ -207,6 +223,8 @@ export class PdfJobs {
   }
   async start(sourceRoot: string, path: string, signal?: AbortSignal): Promise<PdfJobManifest> {
     // Stream once into a random private spool; no all-source allocation and no URL input.
+    const sourceName = basename(path);
+    if (!validSourceName(sourceName)) throw new Error("Invalid PDF source name");
     await assertNoSymlinkPath(sourceRoot, path);
     return this.directory(async root => {
       const temporary = join(root, `spool-${randomUUID()}`);
@@ -230,7 +248,7 @@ export class PdfJobs {
             await rename(temporary, prefix + ".pdf");
             const directory = await open(root, constants.O_RDONLY | constants.O_DIRECTORY); try { await directory.sync(); } finally { await directory.close(); }
           }
-          const m: PdfJobManifest = { version: VERSION, bookId: id, sourceHash: source.hash, sourceBytes: source.size, limits: this.quotas, totalPages: null, parsedPages: 0, indexedWindows: 0, batchOffset: 0, space: null, state: "parsing" };
+          const m: PdfJobManifest = { version: VERSION, bookId: id, sourceHash: source.hash, sourceBytes: source.size, sourceName, limits: this.quotas, totalPages: null, parsedPages: 0, indexedWindows: 0, batchOffset: 0, space: null, state: "parsing" };
           transaction(db, () => save(db, m));
           return m;
         }, true);
@@ -307,6 +325,49 @@ export class PdfJobs {
       return m;
     });
   }
+  private title(m: PdfJobManifest, first?: Window): string {
+    const filename = m.sourceName?.replace(/\.pdf$/iu, "").trim();
+    if (filename) return filename.slice(0, 160);
+    const page = first?.elements.filter(element => element.page === 1).map(element => element.text).join("\n") ?? "";
+    const candidate = page.split(/\r?\n/u).map(line => line.replace(/\s+/gu, " ").trim()).find(line => /[\p{L}\p{N}]/u.test(line));
+    return candidate?.slice(0, 160) || `PDF ${m.sourceHash.slice(0, 8)}`;
+  }
+  private toSummary(m: PdfJobManifest, first?: Window): PdfJobBookSummary {
+    return {
+      bookId: m.bookId,
+      title: this.title(m, first),
+      sourceBytes: m.sourceBytes,
+      totalPages: m.totalPages,
+      parsedPages: m.parsedPages,
+      state: m.state,
+      searchable: m.state === "parsed" || m.state === "ready",
+    };
+  }
+  async summary(id: string, signal?: AbortSignal): Promise<PdfJobBookSummary> {
+    return this.locked(id, async (db, prefix) => {
+      signal?.throwIfAborted();
+      const m = load(db);
+      await privateFile(prefix + ".pdf");
+      const first = m.parsedPages > 0 ? this.readWindow(db, 1, m) : undefined;
+      return this.toSummary(m, first);
+    });
+  }
+  async listBooks(signal?: AbortSignal): Promise<PdfJobBookSummary[]> {
+    const ids = await this.directory(async root => (await readdir(root, { withFileTypes: true }))
+      .filter(entry => entry.isFile() && /^book_[a-f0-9]{64}\.sqlite$/.test(entry.name))
+      .map(entry => entry.name.slice(0, -".sqlite".length))
+      .sort());
+    const books: PdfJobBookSummary[] = [];
+    for (const id of ids) {
+      signal?.throwIfAborted();
+      try { books.push(await this.summary(id, signal)); }
+      catch {
+        signal?.throwIfAborted();
+        books.push({ bookId: id, title: `Unavailable PDF ${id.slice("book_".length, "book_".length + 12)}`, sourceBytes: 0, totalPages: null, parsedPages: 0, state: "unavailable", searchable: false });
+      }
+    }
+    return books.sort((a, b) => a.title.localeCompare(b.title) || a.bookId.localeCompare(b.bookId));
+  }
   async status(id: string, signal?: AbortSignal) { return this.locked(id, async (db, prefix) => { const m = load(db); await this.verify(db, prefix, m, signal); return m; }); }
   async resume(id: string, options: { provider?: EmbeddingProvider; signal?: AbortSignal; onProgress?: (m: PdfJobManifest) => void } = {}) {
     return this.locked(id, async (db, prefix) => {
@@ -371,11 +432,12 @@ export class PdfJobs {
       m.state = "ready"; transaction(db, () => save(db, m)); progress(); return m;
     });
   }
-  /** Dedicated ready-book API; incomplete jobs are never queryable, even lexically. Bounded top-k memory. */
+  /** Parsed books are queryable lexically; hybrid retrieval requires completed vectors. Bounded top-k memory. */
   async search(id: string, query: string, limit = 5, signal?: AbortSignal, provider?: EmbeddingProvider) {
     if (!query.trim() || query.length > 8000 || !positive(limit) || limit > 10) throw new Error("Invalid PDF job search");
     return this.locked(id, async (db, prefix) => {
-      const m = load(db); if (m.state !== "ready") throw new Error("PDF book is incomplete; resume indexing before search");
+      const m = load(db);
+      if (provider ? m.state !== "ready" : !["parsed", "ready"].includes(m.state)) throw new Error(provider ? "PDF book needs a completed embedding index for hybrid search" : "PDF book is still being parsed; resume it before search");
       await this.verify(db, prefix, m, signal);
       let queryVector: number[] | undefined;
       if (provider) {

@@ -82,7 +82,7 @@ test("Studio registers its tools without writes/network; headless defaults deny"
       "export",
       "generate",
       "pdf_start", "pdf_resume", "pdf_status", "pdf_search",
-      "profile_list", "profile_add", "profile_select", "pdf_migrate", "pdf_reindex",
+      "profile_list", "profile_add", "profile_select", "pdf_migrate", "pdf_reindex", "pdf_books",
       "pdf_generation_status", "pdf_generation_pause", "pdf_generation_cancel", "pdf_generation_resume",
       "pdf_generation_activate", "pdf_generation_rollback", "pdf_generation_search", "pdf_generation_associate",
       "describe_image",
@@ -1241,12 +1241,25 @@ test("HTML changed after preflight still enforces source policy before publishin
     const tools = registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "import,list,search" });
     const result = await invoke(tools, "ks_v2_pdf_start", { path: "book.pdf" }, context(cwd));
     const text = result.content.find(c => c.type === "text"); assert.ok(text?.type === "text");
-    const m = JSON.parse(text.text); assert.equal(m.state, "parsed"); assert.equal(m.space, null);
+    const m = JSON.parse(text.text); assert.equal(m.state, "parsed"); assert.equal(m.space, null); assert.ok(!text.text.includes("book_"));
     assert.ok((await readdir(join(cwd, ".pi", "knowledge-studio"))).includes("pdf-jobs"));
     assert.ok(!(await readdir(join(cwd, ".pi"))).includes("knowledge-studio-v2-pdf-jobs"));
-    await invoke(tools, "ks_v2_pdf_status", { bookId: m.bookId }, context(cwd));
-    await assert.rejects(invoke(tools, "ks_v2_pdf_search", { bookId: m.bookId, query: "synthetic" }, context(cwd)), /incomplete/);
-    await assert.rejects(invoke(tools, "ks_v2_pdf_resume", { bookId: m.bookId, index: true }, context(cwd)), /index denied/);
+    const listedResult = await invoke(tools, "ks_v2_pdf_books", {}, context(cwd));
+    const listedText = listedResult.content.find(c => c.type === "text"); assert.ok(listedText?.type === "text");
+    const listed = JSON.parse(listedText.text);
+    assert.ok(!listedText.text.includes("book_"));
+    assert.equal(listed.length, 1); assert.equal(listed[0].title, "book"); assert.match(listed[0].ref, /^B-[a-f0-9]{20}$/u);
+    const statusResult = await invoke(tools, "ks_v2_pdf_status", { bookId: listed[0].ref }, context(cwd));
+    const statusText = statusResult.content.find(c => c.type === "text"); assert.ok(statusText?.type === "text");
+    const status = JSON.parse(statusText.text);
+    assert.ok(!statusText.text.includes("book_"));
+    assert.equal(status.book.ref, listed[0].ref); assert.equal(status.book.title, "book");
+    const searchResult = await invoke(tools, "ks_v2_pdf_search", { bookId: "title:book", query: "synthetic" }, context(cwd));
+    const searchText = searchResult.content.find(c => c.type === "text"); assert.ok(searchText?.type === "text");
+    const search = JSON.parse(searchText.text);
+    assert.ok(!searchText.text.includes("book_"));
+    assert.equal(search.book.ref, listed[0].ref); assert.equal(search.retrieval, "lexical"); assert.equal(search.hits.length, 1);
+    await assert.rejects(invoke(tools, "ks_v2_pdf_resume", { bookId: listed[0].ref, index: true }, context(cwd)), /index denied/);
   } finally { await rm(cwd, { recursive: true, force: true }); }
 });
 
@@ -1264,8 +1277,17 @@ test("PDF profile tools persist revisions and egress denial leaves shadow paused
   const { fixture } = await import("./pdf-job-fixture.ts");
   await writeFile(join(cwd, "source.pdf"), fixture(["synthetic evidence"], true));
   const old = new PdfJobs(join(cwd, "legacy")); const m = await old.start(cwd, join(cwd, "source.pdf")); await old.resume(m.bookId);
-  await invoke(tools, "ks_v2_pdf_migrate", { legacyRoot: "legacy", bookId: m.bookId }, approved);
-  await invoke(tools, "ks_v2_pdf_reindex", { bookId: m.bookId }, approved);
+  const migrated = await invoke(tools, "ks_v2_pdf_migrate", { legacyRoot: "legacy", bookId: m.bookId }, approved);
+  const migratedText = migrated.content.find(c => c.type === "text"); assert.ok(migratedText?.type === "text"); assert.ok(!migratedText.text.includes("book_"));
+  const migratedBook = JSON.parse(migratedText.text).book;
+  const ordinaryStatus = await invoke(tools, "ks_v2_pdf_status", { bookId: migratedBook.ref }, approved);
+  const ordinaryStatusText = ordinaryStatus.content.find(c => c.type === "text"); assert.ok(ordinaryStatusText?.type === "text"); assert.ok(!ordinaryStatusText.text.includes("book_"));
+  await assert.rejects(
+    invoke(tools, "ks_v2_pdf_search", { bookId: migratedBook.ref, query: "synthetic", mode: "lexical" }, approved),
+    /no searchable active generation/,
+  );
+  const reindexed = await invoke(tools, "ks_v2_pdf_reindex", { bookId: m.bookId }, approved);
+  const reindexedText = reindexed.content.find(c => c.type === "text"); assert.ok(reindexedText?.type === "text"); assert.ok(!reindexedText.text.includes("book_"));
   const store = new PdfGenerations(join(cwd, ".pi", "knowledge-studio", "pdf-generations"));
   const g = (await store.status(m.bookId)).generations[0]!;
   await assert.rejects(invoke(tools, "ks_v2_pdf_generation_resume", { generationId: g.id }, context(cwd, async (_title, message) => !message.includes("Send PDF text"))));

@@ -33,8 +33,9 @@ function usage(): string {
     "- `/studio export <知识库> <输出名> <主题>` — 导出证据包",
     "- `/studio generate <知识库> <输出名> <标题> | <主题>` — 生成带来源文档",
     "- `/studio pdf <PDF路径>` — 导入一本 PDF 书籍",
-    "- `/studio books <bookId>` — 查看 PDF 处理状态",
-    "- `/studio book-search <bookId> <问题>` — 搜索已就绪的 PDF 书籍",
+    "- `/studio books` — 列出书名、短引用和处理进度",
+    "- `/studio books <书名或B-短引用>` — 查看一本 PDF 的处理状态",
+    "- `/studio book-search <书名或B-短引用> <问题>` — 搜索已解析的 PDF 书籍",
     "- `/studio help` — 查看帮助",
     "",
     "含空格的路径、标题或问题可使用引号。例：",
@@ -95,7 +96,7 @@ function promptFor(action: Action): string {
     case "生成图文文档":
       return "我想用 Knowledge Studio 生成带来源的图文文档。请询问知识库名称、输出名、文档标题和检索主题，然后调用 ks_v2_generate；默认用 lexical 模式和 selective figure policy。不要绕过任何授权确认。";
     case "PDF 书籍工作流":
-      return "我想使用 Knowledge Studio 的 PDF 书籍工作流。请询问工作区内的 PDF 路径，然后调用 ks_v2_pdf_start；默认只解析，不建立 embedding 索引，除非我明确要求。完成后告诉我 bookId 和下一步命令。不要绕过任何授权确认。";
+      return "我想使用 Knowledge Studio 的 PDF 书籍工作流。请先调用 ks_v2_pdf_books 列出现有书籍；如果我要导入新书，再询问工作区内的 PDF 路径并调用 ks_v2_pdf_start。默认只解析，不建立 embedding 索引，除非我明确要求。后续只使用返回的书名或 B-短引用，不要让我复制内部 bookId。不要绕过任何授权确认。";
     case "查看帮助":
       return usage();
   }
@@ -176,27 +177,38 @@ export function parseStudioCommand(args: string): ParsedStudioCommand {
       if (error) return { kind: "error", message: error };
       return {
         kind: "prompt",
-        prompt: `使用 Knowledge Studio 导入并解析工作区 PDF ${JSON.stringify(values.join(" "))}。请直接调用 ks_v2_pdf_start，index=false，并保留文件读取确认。完成后告诉我 bookId 以及 /studio books 和 /studio book-search 的用法。`,
+        prompt: `使用 Knowledge Studio 导入并解析工作区 PDF ${JSON.stringify(values.join(" "))}。请直接调用 ks_v2_pdf_start，index=false，并保留文件读取确认。完成后告诉我返回的书名、B-短引用，以及 /studio books 和 /studio book-search 的用法；不要让我复制内部 bookId。`,
       };
     }
-    case "books":
+    case "books": {
+      if (values.length === 0) {
+        return {
+          kind: "prompt",
+          prompt: "列出 Knowledge Studio 中已有的 PDF 书籍、B-短引用、解析进度和可检索状态。请直接调用 ks_v2_pdf_books。不要显示或要求我复制内部 bookId。",
+        };
+      }
+      return {
+        kind: "prompt",
+        prompt: `查看 Knowledge Studio PDF 书籍 ${JSON.stringify(values.join(" "))} 的处理状态。它可以是书名或 B-短引用；请直接调用 ks_v2_pdf_status。`,
+      };
+    }
     case "status":
     case "状态": {
-      const error = requireValues(1, "/studio books <bookId>");
+      const error = requireValues(1, "/studio status <书名或B-短引用>");
       if (error) return { kind: "error", message: error };
       return {
         kind: "prompt",
-        prompt: `查看 Knowledge Studio PDF 书籍 ${JSON.stringify(values[0])} 的处理状态。请直接调用 ks_v2_pdf_status。`,
+        prompt: `查看 Knowledge Studio PDF 书籍 ${JSON.stringify(values.join(" "))} 的处理状态。它可以是书名或 B-短引用；请直接调用 ks_v2_pdf_status。`,
       };
     }
     case "book-search":
     case "书籍搜索": {
-      const error = requireValues(2, "/studio book-search <bookId> <问题>");
+      const error = requireValues(2, "/studio book-search <书名或B-短引用> <问题>");
       if (error) return { kind: "error", message: error };
-      const [bookId, ...queryParts] = values;
+      const [book, ...queryParts] = values;
       return {
         kind: "prompt",
-        prompt: `使用 Knowledge Studio 在已就绪的 PDF 书籍 ${JSON.stringify(bookId)} 中搜索 ${JSON.stringify(queryParts.join(" "))}。请直接调用 ks_v2_pdf_search，使用 lexical 模式、limit=5，并保留内容披露确认。`,
+        prompt: `使用 Knowledge Studio 在 PDF 书籍 ${JSON.stringify(book)} 中搜索 ${JSON.stringify(queryParts.join(" "))}。书籍参数可以是书名或 B-短引用；请直接调用 ks_v2_pdf_search，使用 lexical 模式、limit=5，并保留内容披露确认。`,
       };
     }
     default:

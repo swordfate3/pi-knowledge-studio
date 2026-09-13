@@ -1,6 +1,7 @@
 import { checkedStudioPaths, defaultStudioRoot } from "../src/core/studio-paths.ts";
 import { PdfGenerations, profileProvider } from "../src/application/pdf-generation-store.ts";
 import { PdfJobs, DEFAULT_PDF_JOB_LIMITS } from "../src/application/pdf-jobs.ts";
+import { PdfBookCatalog } from "../src/application/pdf-books.ts";
 import { OCR_WARNING } from "../src/domain/ocr.ts";
 import type { OcrOptions } from "../src/adapters/parsing/local-pdf-ocr.ts";
 import {
@@ -216,6 +217,23 @@ function reply(value: unknown) {
     ],
     details: {},
   };
+}
+
+const INTERNAL_PDF_BOOK_ID = /^book_[a-f0-9]{64}$/u;
+
+function publicPdfValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(publicPdfValue);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, item]) => {
+      if (key === "bookId" || (key === "id" && typeof item === "string" && INTERNAL_PDF_BOOK_ID.test(item))) return [];
+      return [[key, publicPdfValue(item)]];
+    }),
+  );
+}
+
+function pdfReply(value: unknown) {
+  return reply(publicPdfValue(value));
 }
 
 export default function knowledgeStudio(pi: ExtensionAPI): void {
@@ -520,6 +538,9 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
     });
   }
   const generations = (ctx: ExtensionContext) => new PdfGenerations(storagePaths(ctx.cwd).pdfGenerations, pdfJobs(ctx).quotas);
+  const directBooks = (ctx: ExtensionContext) => new PdfBookCatalog(pdfJobs(ctx));
+  const generationBooks = (ctx: ExtensionContext) => new PdfBookCatalog(undefined, generations(ctx));
+  const books = (ctx: ExtensionContext) => new PdfBookCatalog(pdfJobs(ctx), generations(ctx));
   pi.registerCommand("studio", {
     description: STUDIO_COMMAND_DESCRIPTION,
     handler: (args, ctx) => runStudioCommand(args, ctx, (prompt) => pi.sendUserMessage(prompt)),
@@ -556,14 +577,25 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
     },
   });
   const bookSchema = Type.String({ pattern: "^book_[a-f0-9]{64}$" });
+  const bookSelectorSchema = Type.String({ minLength: 1, maxLength: 512, description: "Short B- reference, title, or full legacy bookId" });
   const generationSchema = Type.String({ pattern: "^[a-f0-9-]{36}$" });
+  pi.registerTool({
+    name: "ks_v2_pdf_books", label: "Knowledge Studio PDF books", description: "List imported PDF books with human titles and stable short references. No source excerpts or network. Use the short reference for status, resume, search, and generation operations.", parameters: Type.Object({}),
+    async execute(_id, _params, signal, _update, ctx) {
+      const active = signalFor(ctx, signal);
+      await approve(ctx, active, "list", "List imported PDF titles, progress, and short references?");
+      return pdfReply(await books(ctx).list(active));
+    },
+  });
   pi.registerTool({
     name: "ks_v2_pdf_migrate", label: "Knowledge Studio import legacy PDF index", description: "Explicit non-destructive copy/validation of a stopped native-pdf-job-v1 store into generation storage. Original modes/files unchanged. Ready vectors retain exact identity without embedding; parsed captures may be reindexed. Rejects live sidecars and incomplete captures.",
     parameters: Type.Object({ legacyRoot: Type.String(), bookId: bookSchema }),
     async execute(_id, params, signal, _update, ctx) {
       const active = signalFor(ctx, signal), source = confined(resolve(ctx.cwd), params.legacyRoot);
       await approve(ctx, active, "import", `Copy and validate legacy PDF ${params.bookId} from ${JSON.stringify(source)}? Stop legacy writers first. No original changes or network.`);
-      return reply(await generations(ctx).importLegacy(source, params.bookId));
+      const result = await generations(ctx).importLegacy(source, params.bookId);
+      const book = await generationBooks(ctx).resolve(params.bookId, active);
+      return pdfReply({ ...result, book: { ref: book.ref, title: book.title } });
     },
   });
   pi.registerTool({
@@ -574,20 +606,20 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
       const profile = (await store.profiles()).profiles.find(p => p.id === params.profileId && p.revision === params.profileRevision);
       if (!profile) throw new Error("Unknown profile revision");
       await approve(ctx, active, "index", `Associate legacy generation ${params.generationId} with frozen ${profile.id}@${profile.revision} at ${profile.endpoint}, credential reference ${profile.credentialEnv ?? "none"}, space ${JSON.stringify(profile.space)}? Exact computed identity required. No network or vector changes.`);
-      return reply(await store.associateProfile(params.generationId, profile, true));
+      return pdfReply(await store.associateProfile(params.generationId, profile, true));
     },
   });
   pi.registerTool({
-    name: "ks_v2_pdf_reindex", label: "Knowledge Studio shadow PDF reindex", description: "Create a paused shadow generation using the exact selected profile snapshot. No automatic activation or network. Next explicitly resume with fresh index/embedding approval.", parameters: Type.Object({ bookId: bookSchema }),
-    async execute(_id, params, signal, _update, ctx) { const active = signalFor(ctx, signal), store = generations(ctx), profile = await store.selectedProfile(); await approve(ctx, active, "index", `Create shadow generation using ${profile.id}@${profile.revision}? Old search remains active.`); return reply(await store.reindex(params.bookId, profile, true)); },
+    name: "ks_v2_pdf_reindex", label: "Knowledge Studio shadow PDF reindex", description: "Create a paused shadow generation using the exact selected profile snapshot. Accepts a short PDF reference, title, or legacy full bookId. No automatic activation or network. Next explicitly resume with fresh index/embedding approval.", parameters: Type.Object({ bookId: bookSelectorSchema }),
+    async execute(_id, params, signal, _update, ctx) { const active = signalFor(ctx, signal), store = generations(ctx), profile = await store.selectedProfile(); await approve(ctx, active, "index", `Create shadow generation using ${profile.id}@${profile.revision}? Old search remains active.`); const book = await generationBooks(ctx).resolve(params.bookId, active); return pdfReply({ ...(await store.reindex(book.bookId, profile, true)), book: { ref: book.ref, title: book.title } }); },
   });
   pi.registerTool({
-    name: "ks_v2_pdf_generation_status", label: "Knowledge Studio PDF generations", description: "Read active ID/epoch and all generation checkpoints without waiting for embedding HTTP. No source text disclosure.", parameters: Type.Object({ bookId: bookSchema }),
-    async execute(_id, params, signal, _update, ctx) { await approve(ctx, signalFor(ctx, signal), "list", "Disclose PDF generation status?"); return reply(await generations(ctx).status(params.bookId)); },
+    name: "ks_v2_pdf_generation_status", label: "Knowledge Studio PDF generations", description: "Read active ID/epoch and all generation checkpoints by short PDF reference, title, or legacy full bookId, without waiting for embedding HTTP. No source text disclosure.", parameters: Type.Object({ bookId: bookSelectorSchema }),
+    async execute(_id, params, signal, _update, ctx) { const active = signalFor(ctx, signal); await approve(ctx, active, "list", "Disclose PDF generation status?"); const book = await generationBooks(ctx).resolve(params.bookId, active); return pdfReply({ ...(await generations(ctx).status(book.bookId)), book: { ref: book.ref, title: book.title } }); },
   });
   for (const action of ["pause", "cancel"] as const) pi.registerTool({
     name: `ks_v2_pdf_generation_${action}`, label: `Knowledge Studio PDF ${action}`, description: "Fence an in-flight generation immediately. HTTP may finish but cannot commit. Pause is resumable; cancel is terminal. Active ready index is never cancelled.", parameters: Type.Object({ generationId: generationSchema }),
-    async execute(_id, params, signal, _update, ctx) { await approve(ctx, signalFor(ctx, signal), "index", `${action} this shadow generation?`); return reply(await generations(ctx).stop(params.generationId, action === "pause" ? "paused" : "cancelled")); },
+    async execute(_id, params, signal, _update, ctx) { await approve(ctx, signalFor(ctx, signal), "index", `${action} this shadow generation?`); return pdfReply(await generations(ctx).stop(params.generationId, action === "pause" ? "paused" : "cancelled")); },
   });
   pi.registerTool({
     name: "ks_v2_pdf_generation_resume", label: "Knowledge Studio resume shadow PDF", description: "Explicit approved serial batches <=4 using the immutable run profile, not selected default. Failures retain checkpoints; crash lease expires after 60s; no automatic retry/activation. Controls remain available during HTTP.", parameters: Type.Object({ generationId: generationSchema }),
@@ -596,31 +628,34 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
       if (!g.profile) throw new Error("Imported ready generation needs no resume; create a profile-backed reindex");
       await approve(ctx, active, "index", `Resume remaining text batches for ${g.id}? May incur costs.`);
       await approve(ctx, active, "embedding", `Send PDF text only to ${g.profile.endpoint}; profile ${g.profile.id}@${g.profile.revision}; identity ${JSON.stringify(g.space)}. No images.`);
-      return reply(await store.resume(g.id, profileProvider(g.profile, env, "document", true), true, active));
+      const result = await store.resume(g.id, profileProvider(g.profile, env, "document", true), true, active);
+      const book = await generationBooks(ctx).resolve(g.bookId, active);
+      return pdfReply({ ...result, book: { ref: book.ref, title: book.title } });
     },
   });
   for (const action of ["activate", "rollback"] as const) pi.registerTool({
-    name: `ks_v2_pdf_generation_${action}`, label: `Knowledge Studio PDF ${action}`, description: "Validate complete target then atomically CAS active ID and epoch. Rollback selects a retained ready generation. No egress; old generations retained.", parameters: Type.Object({ bookId: bookSchema, generationId: generationSchema, expectedActive: Type.Union([Type.Null(), generationSchema]), expectedEpoch: Type.Integer({ minimum: 0 }) }),
-    async execute(_id, params, signal, _update, ctx) { await approve(ctx, signalFor(ctx, signal), "index", `${action} ready PDF index? Queries will use the target identity, never the default profile.`); return reply(await generations(ctx).activate(params.bookId, params.generationId, params.expectedActive, params.expectedEpoch)); },
+    name: `ks_v2_pdf_generation_${action}`, label: `Knowledge Studio PDF ${action}`, description: "Validate complete target then atomically CAS active ID and epoch. Accepts a short PDF reference, title, or legacy full bookId. Rollback selects a retained ready generation. No egress; old generations retained.", parameters: Type.Object({ bookId: bookSelectorSchema, generationId: generationSchema, expectedActive: Type.Union([Type.Null(), generationSchema]), expectedEpoch: Type.Integer({ minimum: 0 }) }),
+    async execute(_id, params, signal, _update, ctx) { const active = signalFor(ctx, signal); await approve(ctx, active, "index", `${action} ready PDF index? Queries will use the target identity, never the default profile.`); const book = await generationBooks(ctx).resolve(params.bookId, active); return pdfReply({ ...(await generations(ctx).activate(book.bookId, params.generationId, params.expectedActive, params.expectedEpoch)), book: { ref: book.ref, title: book.title } }); },
   });
   pi.registerTool({
-    name: "ks_v2_pdf_generation_search", label: "Knowledge Studio active PDF search", description: "Search a pinned active generation, unaffected by default selection or shadow builds. Hybrid resolves the active profile revision. Imported legacy indexes support hybrid only after explicit exact-match profile association (no guessed endpoint/credentials).", parameters: Type.Object({ bookId: bookSchema, query: querySchema, mode: modeSchema, limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }),
+    name: "ks_v2_pdf_generation_search", label: "Knowledge Studio active PDF search", description: "Search a pinned active generation by short PDF reference, title, or legacy full bookId, unaffected by default selection or shadow builds. Hybrid resolves the active profile revision. Imported legacy indexes support hybrid only after explicit exact-match profile association.", parameters: Type.Object({ bookId: bookSelectorSchema, query: querySchema, mode: modeSchema, limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }),
     async execute(_id, params, signal, _update, ctx) {
       const active = signalFor(ctx, signal), store = generations(ctx);
       await approve(ctx, active, "search", "Disclose PDF excerpts and image/page references to conversation/session/model?");
+      const book = await generationBooks(ctx).resolve(params.bookId, active);
       let provider: EmbeddingProvider | undefined;
       if (params.mode === "hybrid") {
-        const status = await store.status(params.bookId), g = status.generations.find(g => g.id === status.book.active);
+        const status = await store.status(book.bookId), g = status.generations.find(g => g.id === status.book.active);
         if (!g?.profile) throw new Error("Imported legacy index has no credential profile; use lexical or explicitly associate an exact-match trusted profile");
         await approve(ctx, active, "embedding", `Send query to active profile ${g.profile.id}@${g.profile.revision} at ${g.profile.endpoint}?`);
         provider = profileProvider(g.profile, env, "query", true);
       }
-      active.throwIfAborted(); return reply(await store.search(params.bookId, params.query, params.limit ?? 5, provider));
+      active.throwIfAborted(); return pdfReply({ ...(await store.search(book.bookId, params.query, params.limit ?? 5, provider)), book: { ref: book.ref, title: book.title } });
     },
   });
   pi.registerTool({
     name: "ks_v2_pdf_start", label: "Knowledge Studio durable PDF start",
-    description: "Direct local whole-PDF durable job: immutable source spool, automatic five-page windows, optional separately approved serial embedding batches of four. No fixed page ceiling; host input/disk and child/window quotas apply. Native text only, no OCR. Isolated from collection catalog; incomplete books cannot be searched. Returns bookId for status/resume. No automatic network without index + embedding approval.",
+    description: "Direct local whole-PDF durable job: immutable source spool, automatic five-page windows, optional separately approved serial embedding batches of four. No fixed page ceiling; host input/disk and child/window quotas apply. Native text only, no OCR. Isolated from collection catalog; incomplete books cannot be searched. Returns a human title and B- reference for later operations. No automatic network without index + embedding approval.",
     parameters: Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }), index: Type.Optional(Type.Boolean({ default: false })) }),
     async execute(_id, params, signal, update, ctx) {
       const active = signalFor(ctx, signal);
@@ -635,47 +670,73 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
           provider = await embedding(ctx, active, "document");
         }
         const jobs = pdfJobs(ctx), job = await jobs.start(cwd, path, active);
-        update?.(reply(job));
-        return reply(await jobs.resume(job.bookId, { signal: active, ...(provider ? { provider } : {}), onProgress: m => update?.(reply(m)) }));
+        const started = await directBooks(ctx).resolve(job.bookId, active);
+        update?.(pdfReply({ ...job, book: { ref: started.ref, title: started.title } }));
+        const result = await jobs.resume(job.bookId, { signal: active, ...(provider ? { provider } : {}), onProgress: m => update?.(pdfReply(m)) });
+        const book = await directBooks(ctx).resolve(job.bookId, active);
+        return pdfReply({ ...result, book: { ref: book.ref, title: book.title }, next: `Use ${book.ref} or ${JSON.stringify(book.title)} for status, resume, and search.` });
       });
     },
   });
   pi.registerTool({
     name: "ks_v2_pdf_resume", label: "Knowledge Studio durable PDF resume",
-    description: "Resume automatic PDF parsing or explicitly approved embedding from durable checkpoints. Verifies source, parser, quotas, model identity and vector bindings; no silent model switch or retry. Cancellation retains committed progress.",
-    parameters: Type.Object({ bookId: bookSchema, index: Type.Optional(Type.Boolean({ default: false })) }),
+    description: "Resume automatic PDF parsing or explicitly approved embedding by short PDF reference, title, or legacy full bookId. Verifies source, parser, quotas, model identity and vector bindings; no silent model switch or retry. Cancellation retains committed progress.",
+    parameters: Type.Object({ bookId: bookSelectorSchema, index: Type.Optional(Type.Boolean({ default: false })) }),
     async execute(_id, params, signal, update, ctx) {
       const active = signalFor(ctx, signal);
       return run(ctx, active, async () => {
         await approve(ctx, active, "import", `Resume durable PDF job ${params.bookId}? Previously committed windows are retained.`);
+        const book = await directBooks(ctx).resolve(params.bookId, active);
         let provider: EmbeddingProvider | undefined;
         if (params.index === true) {
           await approve(ctx, active, "index", "Resume embedding remaining PDF text batches; may incur costs. Existing model identity must match.");
           provider = await embedding(ctx, active, "document");
         }
-        return reply(await pdfJobs(ctx).resume(params.bookId, { signal: active, ...(provider ? { provider } : {}), onProgress: m => update?.(reply(m)) }));
+        const result = await pdfJobs(ctx).resume(book.bookId, { signal: active, ...(provider ? { provider } : {}), onProgress: m => update?.(pdfReply(m)) });
+        return pdfReply({ ...result, book: { ref: book.ref, title: book.title } });
       });
     },
   });
   pi.registerTool({
     name: "ks_v2_pdf_status", label: "Knowledge Studio PDF progress",
-    description: "Validate durable PDF progress, original source hash and committed window/vector/image checkpoints. Does not claim full book text or image coverage. No network.",
-    parameters: Type.Object({ bookId: bookSchema }),
+    description: "Validate durable PDF progress by short PDF reference, title, or legacy full bookId, including original source hash and committed window/vector/image checkpoints. Does not claim full book text or image coverage. No network.",
+    parameters: Type.Object({ bookId: bookSelectorSchema }),
     async execute(_id, params, signal, _update, ctx) {
       const active = signalFor(ctx, signal);
       await approve(ctx, active, "list", `Disclose job progress and source/model fingerprints for ${params.bookId}?`);
-      return reply(await pdfJobs(ctx).status(params.bookId, active));
+      const book = await books(ctx).resolve(params.bookId, active);
+      const direct = book.direct ? await pdfJobs(ctx).status(book.bookId, active) : undefined;
+      const generation = book.generation ? await generations(ctx).status(book.bookId) : undefined;
+      return pdfReply({
+        ...(direct ?? generation),
+        book: { ref: book.ref, title: book.title },
+        ...(direct && generation ? { generation } : {}),
+      });
     },
   });
   pi.registerTool({
     name: "ks_v2_pdf_search", label: "Knowledge Studio ready PDF search",
-    description: "Dedicated ready-book lexical retrieval with whole-book ID and original physical pages/image hashes. Rejects incomplete jobs. Separate from legacy collection tools; no OCR or export on this route yet. Hybrid requires separate query embedding approval.",
-    parameters: Type.Object({ bookId: bookSchema, query: querySchema, mode: modeSchema, limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }),
+    description: "Dedicated ready-book lexical retrieval by short PDF reference, title, or legacy full bookId, with original physical pages/image hashes. Parsed books are searchable lexically without embedding; hybrid requires a ready index and separate query embedding approval. No OCR or export on this route yet.",
+    parameters: Type.Object({ bookId: bookSelectorSchema, query: querySchema, mode: modeSchema, limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })) }),
     async execute(_id, params, signal, _update, ctx) {
       const active = signalFor(ctx, signal);
       await approve(ctx, active, "search", `Disclose native PDF excerpts and page/image metadata from ${params.bookId} to conversation/model/session log?`);
+      const book = await books(ctx).resolve(params.bookId, active);
+      if (book.generation && book.active) {
+        const store = generations(ctx);
+        let provider: EmbeddingProvider | undefined;
+        if (params.mode === "hybrid") {
+          const status = await store.status(book.bookId);
+          const current = status.generations.find(generation => generation.id === status.book.active);
+          if (!current?.profile) throw new Error("Imported legacy index has no credential profile; use lexical or explicitly associate an exact-match trusted profile");
+          await approve(ctx, active, "embedding", `Send query to active profile ${current.profile.id}@${current.profile.revision} at ${current.profile.endpoint}?`);
+          provider = profileProvider(current.profile, env, "query", true);
+        }
+        return pdfReply({ ...(await store.search(book.bookId, params.query, params.limit ?? 5, provider)), book: { ref: book.ref, title: book.title } });
+      }
+      if (!book.direct) throw new Error("PDF book has no searchable active generation");
       const provider = params.mode === "hybrid" ? await embedding(ctx, active, "query") : undefined;
-      return reply(await pdfJobs(ctx).search(params.bookId, params.query, params.limit ?? 5, active, provider));
+      return pdfReply({ ...(await pdfJobs(ctx).search(book.bookId, params.query, params.limit ?? 5, active, provider)), book: { ref: book.ref, title: book.title } });
     },
   });
   pi.registerTool({

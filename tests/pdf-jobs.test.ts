@@ -33,7 +33,7 @@ test("parse checkpoint cancellation, provider failure, restart, identity drift, 
     const m = await jobs.start(root, path), controller = new AbortController();
     await assert.rejects(jobs.resume(m.bookId, { signal: controller.signal, onProgress: state => { if (state.parsedPages === 5) controller.abort(); } }));
     assert.equal((await jobs.status(m.bookId)).parsedPages, 5);
-    await assert.rejects(jobs.search(m.bookId, "synthetic"), /incomplete/);
+    await assert.rejects(jobs.search(m.bookId, "synthetic"), /still being parsed|no searchable parsed text yet/);
     const p = provider(); let count = 0;
     p.embed = async texts => { if (++count === 2) throw new Error("synthetic provider failure"); return texts.map(() => [1, 2]); };
     await assert.rejects(new PdfJobs(store).resume(m.bookId, { provider: p }), /provider failure/);

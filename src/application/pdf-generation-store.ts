@@ -78,6 +78,17 @@ export interface Generation {
   state: "paused" | "running" | "failed" | "cancelled" | "ready";
   checkpoint: number; totalBatches: number; lease: { token: string; until: number } | null;
 }
+export interface ImportedPdfBookSummary {
+  bookId: string;
+  title: string;
+  sourceBytes: number;
+  totalPages: number | null;
+  parsedPages: number;
+  state: string;
+  searchable: boolean;
+  active: boolean;
+  generationCount: number;
+}
 interface Book { id: string; capture: string; sourceHash: string; active: string | null; epoch: number }
 interface Registry { version: "pdf-generations-v1"; profiles: ModelProfile[]; selected: { id: string; revision: number } | null; books: Book[]; generations: Generation[] }
 function empty(): Registry { return { version: "pdf-generations-v1", profiles: [], selected: null, books: [], generations: [] }; }
@@ -195,6 +206,33 @@ export class PdfGenerations {
     return this.control(r => { const p = r.profiles.find(p => p.id === r.selected?.id && p.revision === r.selected.revision); if (!p) throw new Error("Select a model profile first"); return p; });
   }
   async status(bookId: string) { return this.control(r => ({ book: this.book(r, bookId), generations: r.generations.filter(g => g.bookId === bookId) })); }
+  async summary(bookId: string, signal?: AbortSignal): Promise<ImportedPdfBookSummary> {
+    const entry = await this.control(r => {
+      const book = this.book(r, bookId);
+      return { book, active: book.active !== null, generationCount: r.generations.filter(generation => generation.bookId === book.id).length };
+    });
+    signal?.throwIfAborted();
+    return { ...(await this.capture(entry.book).summary(entry.book.id, signal)), active: entry.active, generationCount: entry.generationCount };
+  }
+  async listBooks(signal?: AbortSignal): Promise<ImportedPdfBookSummary[]> {
+    const entries = await this.control(r => r.books.map(book => ({
+      book,
+      active: book.active !== null,
+      generationCount: r.generations.filter(generation => generation.bookId === book.id).length,
+    })));
+    const summaries: ImportedPdfBookSummary[] = [];
+    for (const entry of entries) {
+      signal?.throwIfAborted();
+      try {
+        const summary = await this.capture(entry.book).summary(entry.book.id, signal);
+        summaries.push({ ...summary, active: entry.active, generationCount: entry.generationCount });
+      } catch {
+        signal?.throwIfAborted();
+        summaries.push({ bookId: entry.book.id, title: `Unavailable PDF ${entry.book.id.slice("book_".length, "book_".length + 12)}`, sourceBytes: 0, totalPages: null, parsedPages: 0, state: "unavailable", searchable: false, active: entry.active, generationCount: entry.generationCount });
+      }
+    }
+    return summaries.sort((a, b) => Number(b.active) - Number(a.active) || a.title.localeCompare(b.title) || a.bookId.localeCompare(b.bookId));
+  }
   private book(r: Registry, id: string) { const b = r.books.find(b => b.id === id); if (!b) throw new Error("Unknown imported PDF book"); return b; }
   private generation(r: Registry, id: string) { const g = r.generations.find(g => g.id === id); if (!g) throw new Error("Unknown PDF generation"); return g; }
   async generationSnapshot(id: string) { return this.control(r => this.generation(r, id)); }
