@@ -14,7 +14,7 @@ Set the compatibility-stable `PI_KS_V2_DATA_DIR` to an **absolute** private dire
 
 ## Removed V1 JSON stores
 
-The V1 runtime and its JSON store implementation are no longer shipped. If `collection.json` or `manifest.json` markers from V1 are found under the selected `collections/` directory, current Knowledge Studio fails closed and does not move, merge, overwrite, or reinterpret them.
+The V1 runtime and its JSON store implementation are no longer shipped. Current Knowledge Studio checks both the selected `collections/` directory and the former project-local `<cwd>/.pi/knowledge-studio/legacy-v1/collections` root. If that old root exists, or if `collection.json` or `manifest.json` markers from V1 are found under the selected `collections/` directory, startup fails closed and does not move, merge, overwrite, or reinterpret them.
 
 To preserve old data:
 
