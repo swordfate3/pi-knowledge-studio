@@ -27,16 +27,49 @@ Source input paths are relative to the **Pi working directory**, not to the exte
 
 ## First local workflow
 
-Place a non-sensitive `notes.md` or `notes.txt` inside the workspace. In Pi, ask the assistant to call the tools below with these arguments (these are tool calls, not shell commands):
+Place a non-sensitive `notes.md` or `notes.txt` inside the workspace. The recommended entry point in Pi is:
 
 ```text
-ks_v2_import  {"collection":"demo","path":"notes.md"}
-ks_v2_list    {"collection":"demo"}
-ks_v2_search  {"collection":"demo","query":"a term present in your notes","mode":"lexical","limit":5}
-ks_v2_export  {"collection":"demo","query":"a term present in your notes","output":"first-export"}
+/studio
 ```
 
-Approve each requested action in the trusted Pi confirmation UI. The standalone tools below keep their own confirmations. A normal interactive `ks_v2_generate` call is the exception: it presents one bundled confirmation for retrieval, optional hybrid/reranking, generation-model egress, and automatic export when an answer is produced. Search with no relevant hits reports an error rather than inventing an answer. `ks_v2_export` is deterministic **evidence compilation**, not model-generated prose; bundle/package UUIDs mean repeated exports are not byte-identical.
+The bare command opens an interactive menu. The same workflows can be started directly:
+
+```text
+/studio import demo notes.md
+/studio list demo
+/studio search demo "a term present in your notes"
+/studio export demo first-export "a term present in your notes"
+```
+
+`/studio` is a Pi slash command, not a shell command. It starts an agent turn that invokes the appropriate compatibility-stable `ks_v2_*` tool. Approve each requested action in the trusted Pi confirmation UI; the command never grants a capability or bypasses a confirmation. A normal interactive generation workflow presents one bundled confirmation for retrieval, optional hybrid/reranking, generation-model egress, and automatic export when an answer is produced. Search with no relevant hits reports an error rather than inventing an answer. Evidence export is deterministic **evidence compilation**, not model-generated prose; bundle/package UUIDs mean repeated exports are not byte-identical.
+
+### `/studio` command reference
+
+Paths, titles, and questions containing spaces can be quoted with `'` or `"`. The generation separator `|` distinguishes the output title from the retrieval topic; if omitted, the title is also used as the topic.
+
+| Command | Workflow |
+| --- | --- |
+| `/studio` | Open the interactive workflow menu. |
+| `/studio import <collection> <path>` | Import one supported workspace file. |
+| `/studio list <collection>` | List documents in a collection. |
+| `/studio search <collection> <query>` | Lexical search with a default limit of 5. |
+| `/studio export <collection> <output> <query>` | Lexically retrieve and export an evidence package. |
+| `/studio generate <collection> <output> <title> \| <query>` | Generate a cited document with lexical retrieval, limit 8, and selective source figures. |
+| `/studio pdf <path>` | Start durable native-PDF parsing without embedding indexing. |
+| `/studio books <bookId>` | Show durable PDF job status. |
+| `/studio book-search <bookId> <query>` | Lexically search a ready durable PDF book. |
+| `/studio help` | Show local help without starting an agent turn. |
+
+Examples:
+
+```text
+/studio import freertos "docs/FreeRTOS 笔记.md"
+/studio generate freertos priority-guide "优先级继承详解" | "互斥量与优先级继承"
+/studio pdf "books/FreeRTOS 内核.pdf"
+```
+
+The menu can also start guided workflows when you do not yet know all arguments; the assistant asks for missing collection/path/query details. Explicit subcommands avoid that extra question. Non-interactive/headless mode cannot display the menu, so use an explicit subcommand and configure only the required host grants.
 
 Exports are unique packages below `~/.pi/knowledge-studio/exports/<output>/` (or the configured `PI_KS_V2_DATA_DIR/exports/`), containing `document.md`, `document.html`, image assets and `sources.json`, `evidence.json`, `manifest.json`. JPEG/WebP originals are retained alongside separate PNG display renditions; provenance identifies both. Original bytes are not replaced by the display conversion. Keep the whole package together for offline viewing/sharing. Outputs include sensitive text and provenance; nothing is redacted.
 

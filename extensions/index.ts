@@ -47,6 +47,10 @@ import { HttpReranker } from "../src/adapters/models/http-reranker.ts";
 import type { Reranker } from "../src/ports/reranker.ts";
 import type { EmbeddingProvider } from "../src/domain/retrieval.ts";
 import {
+  runStudioCommand,
+  STUDIO_COMMAND_DESCRIPTION,
+} from "../src/studio-command.ts";
+import {
   assertNoSymlinkPath,
   ensureDirectorySafe,
   readRegularFileWithin,
@@ -516,6 +520,10 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
     });
   }
   const generations = (ctx: ExtensionContext) => new PdfGenerations(storagePaths(ctx.cwd).pdfGenerations, pdfJobs(ctx).quotas);
+  pi.registerCommand("studio", {
+    description: STUDIO_COMMAND_DESCRIPTION,
+    handler: (args, ctx) => runStudioCommand(args, ctx, (prompt) => pi.sendUserMessage(prompt)),
+  });
   const profileSchema = Type.Object({
     id: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" }),
     endpoint: Type.String({ maxLength: 2048 }), kind: Type.Unsafe<"openai" | "wemm">({ type: "string", enum: ["openai", "wemm"] }),

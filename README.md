@@ -47,6 +47,32 @@ Pi loads `extensions/index.ts` through the manifest in `package.json`. To load t
 pi -e ./extensions/index.ts
 ```
 
+Restart Pi (or run `/reload`) after installing or updating the extension.
+
+## Quick start: `/studio`
+
+The recommended interface is the discoverable slash command:
+
+```text
+/studio
+```
+
+It opens an interactive menu for importing, listing, searching, exporting, generating, and native-PDF workflows. Commands with explicit arguments are also available:
+
+```text
+/studio import freertos "docs/FreeRTOS 笔记.md"
+/studio list freertos
+/studio search freertos "优先级继承如何工作？"
+/studio export freertos priority-evidence "互斥量与优先级继承"
+/studio generate freertos priority-guide "优先级继承详解" | "互斥量与优先级继承"
+/studio pdf "books/FreeRTOS 内核.pdf"
+/studio books book_<64位哈希>
+/studio book-search book_<64位哈希> "任务切换如何实现？"
+/studio help
+```
+
+The command starts the appropriate Studio workflow through Pi and preserves every existing file-access, disclosure, model-egress, and export confirmation. It does not grant capabilities or bypass approvals. See [`docs/usage.md`](docs/usage.md) for full syntax and limits.
+
 ## Tools
 
 ### General collections
