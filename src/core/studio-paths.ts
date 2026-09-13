@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 
 export const V2_DATA_DIR_ENV = "PI_KS_V2_DATA_DIR";
 
-/** The V2 store is shared by Pi sessions through the user's persistent ~/.pi area. */
+/** The store is shared by Pi sessions through the user's persistent ~/.pi area. */
 export function defaultStudioRoot(): string {
   const configured = process.env[V2_DATA_DIR_ENV]?.trim();
   if (configured) {
@@ -24,13 +24,7 @@ export function studioPaths(_cwd: string, root = defaultStudioRoot()) {
     pdfJobs: join(resolvedRoot, "pdf-jobs"),
     pdfGenerations: join(resolvedRoot, "pdf-generations"),
     exports: join(resolvedRoot, "exports"),
-    legacyV1: join(resolvedRoot, "legacy-v1"),
   };
-}
-
-/** The V1 compatibility store remains project-relative and is intentionally separate. */
-export function projectStudioPaths(cwd: string) {
-  return studioPaths(cwd, resolve(cwd, ".pi", "knowledge-studio"));
 }
 
 function stat(path: string) {
@@ -51,7 +45,6 @@ export function checkedStudioPaths(cwd: string, root = defaultStudioRoot()) {
     [join(rootParent, "knowledge-studio-v2-pdf-generations"), paths.pdfGenerations],
     [join(dirname(rootParent), "knowledge-studio-v2-exports"), paths.exports],
   ];
-  // V1 used this same umbrella, but its JSON collections are incompatible with V2.
   // Never follow symlinks while inspecting the selected persistent root.
   for (const path of [paths.root, paths.collections]) {
     const info = stat(path);
@@ -63,8 +56,9 @@ export function checkedStudioPaths(cwd: string, root = defaultStudioRoot()) {
     for (const entry of readdirSync(paths.collections, { withFileTypes: true })) {
       if (entry.isSymbolicLink()) throw new Error(`Unsafe Studio collection: ${entry.name}`);
       if (entry.isDirectory() && ["collection.json", "manifest.json"].some(name => stat(join(paths.collections, entry.name, name)))) {
-        legacy.push([paths.collections, join(paths.legacyV1, "collections")]);
-        break;
+        throw new Error(
+          `Removed V1 JSON storage detected at ${paths.collections}; the current Studio cannot open or migrate it in place. Stop all Studio processes, back it up, and use the old release to export needed data before removing that directory. No data was moved or reindexed.`,
+        );
       }
     }
   }

@@ -8,7 +8,7 @@ import type {
   ExtensionContext,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import v2 from "../extensions/v2.ts";
+import extension from "../extensions/index.ts";
 function register(grants: string, config?: string, storageRoot?: string) {
   const saved = { ...process.env };
   process.env.PI_KS_V2_HEADLESS_GRANTS = grants;
@@ -17,7 +17,7 @@ function register(grants: string, config?: string, storageRoot?: string) {
   else delete process.env.PI_KS_V2_OCR_CONFIG;
   const tools = new Map<string, ToolDefinition>();
   try {
-    v2({
+    extension({
       registerCommand() {},
       registerTool: (tool: ToolDefinition) => {
         tools.set(tool.name, tool);
@@ -108,8 +108,8 @@ test("real extension OCR config is registration-snapshotted and consent precedes
     );
   assert.match(JSON.stringify(imported), /unverified/);
   assert.deepEqual(approvals, [
-    "Knowledge Studio V2: import",
-    "Knowledge Studio V2: ocr",
+    "Knowledge Studio: import",
+    "Knowledge Studio: ocr",
   ]);
   const searched = await tools
     .get("ks_v2_search")!

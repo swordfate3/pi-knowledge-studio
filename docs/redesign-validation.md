@@ -1,6 +1,6 @@
 # 重构实施与验收计划
 
-状态：**初始设计阶段的验收计划与历史验证记录**。下文“本轮”“尚未执行”描述首次设计审查，不代表当前实现状态。当前能力、实测与剩余缺口见 [实现进度](IMPLEMENTATION-PROGRESS.md)、[使用说明](v2-usage.md) 和 [检索评测](retrieval-evaluation.md)。对应 [多模态架构提案](multimodal-redesign.md)；原定发布门槛仍待逐项验收，不能以局部实现或合成测试替代。
+状态：**初始设计阶段的验收计划与历史验证记录**。下文“本轮”“尚未执行”描述首次设计审查，不代表当前实现状态。当前能力、实测与剩余缺口见 [实现进度](IMPLEMENTATION-PROGRESS.md)、[使用说明](usage.md) 和 [检索评测](retrieval-evaluation.md)。对应 [多模态架构提案](multimodal-redesign.md)；原定发布门槛仍待逐项验收，不能以局部实现或合成测试替代。
 
 ## 1. 阶段与完成定义
 

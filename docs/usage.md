@@ -1,29 +1,29 @@
-# Experimental v2 usage
+# Usage
 
-This guide describes `extensions/v2.ts` and `src/application/knowledge-runtime.ts`, not the legacy v1 APIs in `src/index.ts`. The package manifest loads both `extensions/index.ts` (v1) and `extensions/v2.ts`, with separate tool names and data roots; there is no automatic v1 collection migration. Redesign plans and the older portable-export slice document are not the current feature contract.
+This guide describes the sole packaged extension, `extensions/index.ts`, and its application runtime in `src/application/knowledge-runtime.ts`. Compatibility-stable `ks_v2_*`, `PI_KS_V2_*`, and persisted format-version identifiers remain unchanged; they do not represent a second bundled implementation. Redesign plans and older slice documents are historical context, not the current feature contract.
 
 ## Install and run
 
-Requirements: Node.js **>=22.19.0** with built-in `node:sqlite`, a Pi installation exposing the extension APIs used here (including `withFileMutationQueue`), and a POSIX filesystem. Native Windows permission semantics are not supported by the v2 entry's owner checks; use an appropriate Linux filesystem. PDF parsing needs the optional `unpdf` dependency and permission to spawn a Node child process. Restricted DOCX and static HTML parsing need `python3` (standard library only) and permission to spawn an isolated Python child process. JPEG/WebP capture and export additionally require the optional `sharp` native decoder and a Node child process. Decoder versions form part of the rendition recipe: keep the recorded decoder version available for exporting existing renditions; a version mismatch fails rather than silently changing images.
+Requirements: Node.js **>=22.19.0** with built-in `node:sqlite`, a Pi installation exposing the extension APIs used here (including `withFileMutationQueue`), and a POSIX filesystem. Native Windows permission semantics are not supported by the extension's owner checks; use an appropriate Linux filesystem. PDF parsing needs the optional `unpdf` dependency and permission to spawn a Node child process. Restricted DOCX and static HTML parsing need `python3` (standard library only) and permission to spawn an isolated Python child process. JPEG/WebP capture and export additionally require the optional `sharp` native decoder and a Node child process. Decoder versions form part of the rendition recipe: keep the recorded decoder version available for exporting existing renditions; a version mismatch fails rather than silently changing images.
 
 ```sh
 cd /path/to/pi-knowledge-studio
 npm install                 # optional unpdf for PDF; optional sharp for JPEG/WebP
 npm run check
 npm test
-pi -e extensions/v2.ts
+pi -e extensions/index.ts
 ```
 
-No separate compile step or model service is needed for lexical retrieval and evidence export. The checks above are validation commands, not a claim that every remote model has been tested. A normal `pi install /path/to/pi-knowledge-studio` uses the manifest and enables both v1 and v2 after loading/reloading the package. The explicit `-e` example is an alternative for trying the v2 entry.
+No separate compile step or model service is needed for lexical retrieval and evidence export. The checks above are validation commands, not a claim that every remote model has been tested. A normal `pi install /path/to/pi-knowledge-studio` uses the manifest and enables the sole extension after loading/reloading the package. The explicit `-e` example is an alternative for running directly from a checkout.
 
 For a separate source workspace, install dependencies in the checkout first, then run:
 
 ```sh
 cd /path/to/private-workspace
-pi -e /path/to/pi-knowledge-studio/extensions/v2.ts
+pi -e /path/to/pi-knowledge-studio/extensions/index.ts
 ```
 
-Source input paths are relative to the **Pi working directory**, not to the extension checkout. V2 persistent data and outputs default to `~/.pi/knowledge-studio/` (`/root/.pi/knowledge-studio/` in the standard container), independent of the working directory. Set `PI_KS_V2_DATA_DIR` to an absolute path before starting Pi to use another private root; the value is snapshotted when the extension registers. Extension registration performs no filesystem writes or network calls. Existing project-local V2 data is not automatically moved or merged; see [storage layout and upgrade instructions](storage-layout.md).
+Source input paths are relative to the **Pi working directory**, not to the extension checkout. Persistent data and outputs default to `~/.pi/knowledge-studio/` (`/root/.pi/knowledge-studio/` in the standard container), independent of the working directory. Set the compatibility-stable `PI_KS_V2_DATA_DIR` to an absolute path before starting Pi to use another private root; the value is snapshotted when the extension registers. Extension registration performs no filesystem writes or network calls. Existing project-local data from earlier layouts is not automatically moved or merged; see [storage layout and upgrade instructions](storage-layout.md).
 
 ## First local workflow
 
@@ -61,16 +61,16 @@ Tool JSON replies are capped at 40,000 bytes/1500 lines. Narrow the query/limit 
 
 ## Storage, permissions and disclosure
 
-- Collections live at `~/.pi/knowledge-studio/collections/<collection>/` (or under the configured `PI_KS_V2_DATA_DIR`), with SQLite catalog and content-addressed `blobs/`. The v2 base/collection directories and export base/output directories must be owned by the process user and **0700**. New directories are created safely; existing directories are not silently chmodded. If an owner-only error occurs, inspect the named directory and fix only that intended private directory (for example `chmod 700 <directory>`), not the entire workspace recursively.
+- Collections live at `~/.pi/knowledge-studio/collections/<collection>/` (or under the configured `PI_KS_V2_DATA_DIR`), with SQLite catalog and content-addressed `blobs/`. The Studio base/collection directories and export base/output directories must be owned by the process user and **0700**. New directories are created safely; existing directories are not silently chmodded. If an owner-only error occurs, inspect the named directory and fix only that intended private directory (for example `chmod 700 <directory>`), not the entire workspace recursively.
 - Source paths must be strictly inside cwd, without symlink traversal. One leading `@` is accepted. No recursive directory imports or URL fetching. Hidden path components and runtime/generated/vendor/build/cache/log/temp/credential-like names are refused, as is the export directory. These filename filters are **not secret detection**. Linked Markdown image paths undergo the same exclusions; conservative preflight can reject image-like syntax even in code fences.
-- UI runs require trusted confirmation for each standalone/high-risk operation. A normal interactive `ks_v2_generate` call uses one bundled confirmation for its retrieval, optional hybrid/reranking, generation-model egress and automatic export; the approval is bounded to the displayed lexical candidates and the current source epoch, and the final hybrid/reranked evidence may reorder or reduce that candidate set. Headless runs deny by default; host-set `PI_KS_V2_HEADLESS_GRANTS` is a comma-separated allowlist of `import,ocr,search,embedding,index,export,remove,list,generate,vision,enrich,rerank`. Grant only needed capabilities, not the whole list. For example, `PI_KS_V2_HEADLESS_GRANTS=search,list pi -e /path/to/extensions/v2.ts -p 'List demo and search it for scheduling'` allows metadata/excerpt disclosure from an existing collection without granting import, export or network embedding. Headless grants do not bypass confirmations when a UI is present.
+- UI runs require trusted confirmation for each standalone/high-risk operation. A normal interactive `ks_v2_generate` call uses one bundled confirmation for its retrieval, optional hybrid/reranking, generation-model egress and automatic export; the approval is bounded to the displayed lexical candidates and the current source epoch, and the final hybrid/reranked evidence may reorder or reduce that candidate set. Headless runs deny by default; host-set `PI_KS_V2_HEADLESS_GRANTS` is a comma-separated allowlist of `import,ocr,search,embedding,index,export,remove,list,generate,vision,enrich,rerank`. Grant only needed capabilities, not the whole list. For example, `PI_KS_V2_HEADLESS_GRANTS=search,list pi -e /path/to/extensions/index.ts -p 'List demo and search it for scheduling'` allows metadata/excerpt disclosure from an existing collection without granting import, export or network embedding. Headless grants do not bypass confirmations when a UI is present.
 - Search/list disclose source content or metadata to Pi's conversation model and logs even when retrieval is local. Generation sends the **entire selected evidence bundle and title**, including labels, locators, hashes and image metadata, but **no PNG bytes**, to its endpoint. Vision sends original PNG bytes including metadata, or a verified metadata-free PNG rendition for a captured JPEG/WebP. The latter's original JPEG/WebP bytes are not sent to vision. Embedding sends all text chunks during indexing, or the query during hybrid retrieval; no images.
 - Export approval covers all selected body text, captions, supplementary excerpts, original image metadata/bytes, display renditions and source provenance. It is not a redaction toggle. Keep data/exports out of version control and review them before sharing.
 - Gates are not a sandbox: other tools/extensions and same-user processes retain access. Mutation queuing and optimistic epoch checks are not cross-process transactions. Cancellation is cooperative and cannot immediately interrupt an in-flight HTTP request or local commit; inspect state before retrying. Partial indexing may require an explicit rerun. No hard OS memory quota, secure deletion, crash-durability guarantee or multi-tenant security is promised.
 
 ## Optional model configuration
 
-Only **host environment** values are accepted, never endpoint/key overrides in tool arguments. V1 `PI_KNOWLEDGE_STUDIO_*` settings and `OPENAI_API_KEY` fallback do **not** configure this entry. V2 has no home/profile override or environment knobs for parser budgets.
+Only **host environment** values are accepted, never endpoint/key overrides in tool arguments. Removed `PI_KNOWLEDGE_STUDIO_*` settings and the old `OPENAI_API_KEY` fallback do **not** configure this extension. There is no legacy home/profile override or environment knob for parser budgets.
 
 All endpoints are **complete request URLs**, not base URLs: HTTPS, or HTTP only on `localhost`, `127.0.0.1` or `[::1]`. Embedded URL credentials, query strings and fragments are rejected by the entry; HTTP redirects are rejected by the adapter. Optional keys are sent as Bearer headers. Keep secrets out of prompts, committed scripts and source documents. HTTP calls default to a 30-second timeout, with 4 MiB request and 8 MiB response budgets. Generation and vision deadlines can be explicitly configured up to 180 seconds; there are no automatic retries. Grants do not waive these limits.
 

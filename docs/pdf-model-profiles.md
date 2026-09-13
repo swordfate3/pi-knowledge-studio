@@ -65,10 +65,10 @@ Application API lives in `src/application/pdf-generation-store.ts`: `PdfGenerati
 
 ## Verification
 
-Synthetic source-capture tests cover legacy identity/image preservation, 0755/0644 byte-preserving import, same-space isolation, A-search/status/cancel while B is blocked, concurrent resume rejection, pause fencing, failure checkpoints, SIGKILL recovery, immutable profile revisions, provider drift, atomic CAS/rollback, corrupt schema/registry/vector bindings, symlinks, quotas and egress denial. Pi registration/tool tests cover new tools and denied resume without outbound calls. See `tests/pdf-generations.test.ts` and `tests/v2-extension.test.ts`.
+Synthetic source-capture tests cover legacy identity/image preservation, 0755/0644 byte-preserving import, same-space isolation, A-search/status/cancel while B is blocked, concurrent resume rejection, pause fencing, failure checkpoints, SIGKILL recovery, immutable profile revisions, provider drift, atomic CAS/rollback, corrupt schema/registry/vector bindings, symlinks, quotas and egress denial. Pi registration/tool tests cover new tools and denied resume without outbound calls. See `tests/pdf-generations.test.ts` and `tests/extension.test.ts`.
 
 Latest local run for this slice: `npm run check` passed;
-`node --experimental-strip-types --test tests/pdf-generations.test.ts tests/pdf-jobs.test.ts tests/v2-extension.test.ts`
+`node --experimental-strip-types --test tests/pdf-generations.test.ts tests/pdf-jobs.test.ts tests/extension.test.ts`
 passed **49/49**; `npm test` reported **256 tests, 246 passed, 10 skipped, 0 failed**.
 Skipped coverage is existing optional/environment-dependent coverage, not a pass.
 Final full log: `/tmp/pdf-fixes-full-final.log` (also passed in `/tmp/pdf-fixes-full-retry.log`); scoped log: `/tmp/pdf-fixes-scoped.log`. Initial parallel full run (`/tmp/pdf-fixes-full.log`) failed: 250 reported tests, 236 passed, four failures, ten skips, including loopback EADDRINUSE and three file-level failures. Unchanged rerun passed; this is an environment/concurrency instability observation, not a claim that the first run passed.

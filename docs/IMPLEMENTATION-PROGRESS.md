@@ -13,7 +13,7 @@ The five-gate ledger in [DELIVERY-ACCEPTANCE.md](DELIVERY-ACCEPTANCE.md) takes p
 - [x] TXT, restricted inline-image Markdown, standalone PNG/JPEG/WebP, bounded digital-PDF capture, restricted DOCX and static HTML text with local original PNG/JPEG/WebP occurrences (Python 3 prerequisite for DOCX/HTML). HTML is a strict balanced structural subset, not browser rendering.
 - [x] Independent BM25-style lexical and dense candidates, RRF fusion, embedding-space isolation and related-image retrieval.
 - [x] WeMM and OpenAI-compatible embedding adapters; bounded OpenAI-compatible generation and PNG vision adapters with explicit approval.
-- [x] Additive v2 Pi tools and package manifest integration, preserving v1 and its data.
+- [x] The current Pi tools and sole package entry, with compatibility-stable `ks_v2_*` protocol names.
 - [x] Offline source-hidden/reopen fixtures, malformed input and permission checks, mocked Pi/model integration.
 - [x] Main verification after JPEG/WebP and DOCX budget correction: TypeScript check after static HTML integration; 117 tests, 116 passed, one skipped because this environment cannot change file ownership. DOCX original-byte and combined-byte counters are separate. A real-decoder regression checks both image orders: 18,917,842 original bytes, 41,082,499 combined bytes and 6,480,000 pixels, preserving original hashes and rendition links.
 - [x] Actual remote WeMM synthetic document/query inference: two successful requests, 512 finite dimensions. No private documents sent; no services stopped or downloaded.
@@ -40,4 +40,4 @@ The first bounded local end-to-end implementation is available. It is not the fu
 
 The next frozen four-case subset A02/A26/A32/A03 was not dispatched because a read-only preflight observed GPU contention despite an idle Qwen slot. No services were stopped; do not count it as quality evidence. Latest full regression remains 216/214 passed/two ownership skips. The packaged offline verifier CLI now has an unpacked-tarball fail-closed smoke check.
 
-Read `docs/v2-usage.md` and run `npm run check && npm test`. Next prioritize realistic end-user/model validation and broader format ingestion; retain existing safe consent boundaries. Never modify the installed pi-knowledge database or stop remote workloads without authorization. Work is uncommitted on `redesign/multimodal-knowledge-v2`.
+Read `docs/usage.md` and run `npm run check && npm test`. Next prioritize realistic end-user/model validation and broader format ingestion; retain existing safe consent boundaries. Never modify the installed pi-knowledge database or stop remote workloads without authorization. Keep acceptance evidence aligned with the current `main` branch.

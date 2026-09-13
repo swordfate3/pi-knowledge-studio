@@ -1,15 +1,15 @@
 # Source layout
 
-The `src/` tree is the implementation of the generic, profile-driven Pi package. Keep modules organized by responsibility and preserve the dependency direction described in [ARCHITECTURE.md](../ARCHITECTURE.md).
+`src/` contains the implementation behind the sole Pi entry, [`extensions/index.ts`](../extensions/index.ts).
 
-- `config.ts` — environment variables and project/global data-root resolution.
-- `core/` — records, locators, stable IDs, hashes, chunking, and simple lexical scoring.
-- `ingest/` — supported local text/PDF reading and referenced local-asset copying.
-- `profiles/` — profile metadata and guidance. FreeRTOS / STM32 is an optional example.
-- `retrieval/` — bounded lexical collection and asset search; no embeddings or BM25.
-- `storage/` — JSON collection persistence and atomic writes.
-- `generation/` — evidence-first Markdown rendering, not a complete document generator.
-- `vision/` — optional OpenAI-compatible image provider.
-- `index.ts` — public exports.
+- `domain/` — durable answer, evidence, OCR, retrieval, rendition, and enrichment contracts.
+- `ports/` — interfaces for replaceable storage/model boundaries.
+- `application/` — capture validation, retrieval/reranking, generation validation, image enrichment, PDF jobs/generations, and recovery use cases.
+- `adapters/blob/` — content-addressed local blob storage.
+- `adapters/storage/` — SQLite catalog schema and transactions.
+- `adapters/parsing/` — bounded TXT/Markdown/image/PDF/DOCX/HTML/OCR capture workers.
+- `adapters/models/` — explicit HTTP embedding, reranking, generation, and vision protocols.
+- `adapters/export/` — deterministic portable Markdown/HTML and image packaging.
+- `core/` — path safety, storage-root resolution, and retrieval chunk primitives.
 
-The current supported ingest types are Markdown, text/RST, HTML, JSON, CSV, and PDF text when the optional extractor is available. Avoid adding vendor, board, database, or transport assumptions to core types. Keep source and generated data outside tracked source files.
+Dependency direction and compatibility rules are documented in [`ARCHITECTURE.md`](../ARCHITECTURE.md). Keep generated data, private documents, credentials, and model artifacts outside tracked source files.

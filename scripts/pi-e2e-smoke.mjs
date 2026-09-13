@@ -259,7 +259,7 @@ class Rpc {
         "--offline",
         "--no-extensions",
         "-e",
-        join(repo, "extensions/v2.ts"),
+        join(repo, "extensions/index.ts"),
         "--no-context-files",
         "--no-skills",
         "--no-prompt-templates",
@@ -332,7 +332,7 @@ class Rpc {
         this.pending,
         "Unexpected confirmation outside a requested operation",
       );
-      const grant = event.title.replace("Knowledge Studio V2: ", "");
+      const grant = event.title.replace("Knowledge Studio: ", "");
       assert.notEqual(grant, event.title, "Unexpected confirmation title");
       this.pending.confirmations.push(grant);
       this.send({
@@ -551,7 +551,7 @@ export async function runSmoke({
       XDG_CONFIG_HOME: join(home, ".config"),
       XDG_CACHE_HOME: join(home, ".cache"),
       PI_CODING_AGENT_DIR: agent,
-      // Keep this subprocess isolated while production V2 defaults to ~/.pi/knowledge-studio.
+      // Keep this subprocess isolated while Knowledge Studio defaults to ~/.pi/knowledge-studio.
       PI_KS_V2_DATA_DIR: storageRoot,
       PI_OFFLINE: "1",
       PI_TELEMETRY: "0",

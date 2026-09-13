@@ -35,7 +35,7 @@ From the repository root:
 
 ```sh
 node scripts/pi-e2e-smoke.mjs --keep
-node --experimental-strip-types --test tests/v2-extension.test.ts tests/pi-e2e-smoke.test.ts
+node --experimental-strip-types --test tests/extension.test.ts tests/pi-e2e-smoke.test.ts
 # Explicit optional use of existing loopback model services; synthetic inputs only:
 PI_KS_V2_GENERATE_TIMEOUT_MS=180000 node scripts/pi-e2e-smoke.mjs --live --keep
 ```
@@ -54,7 +54,7 @@ The spawned command is equivalent to:
 ```sh
 node /usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js \
   --mode rpc --no-session --offline --no-extensions \
-  -e <REPO>/extensions/v2.ts --no-context-files --no-skills \
+  -e <REPO>/extensions/index.ts --no-context-files --no-skills \
   --no-prompt-templates --no-themes --no-builtin-tools \
   --provider pi-e2e --model synthetic-driver --thinking off
 ```
@@ -71,7 +71,7 @@ This is configuration isolation, not an OS-level network sandbox.
 
 The loopback OpenAI-compatible **model transport** returns deterministic streaming
 `tool_calls`. It checks that the requested tool is actually advertised by Pi and
-that no non-V2 tools are advertised. Pi itself loads `extensions/v2.ts`, invokes
+that no removed legacy tools are advertised. Pi itself loads `extensions/index.ts`, invokes
 the registered tool, and feeds the tool result back to the model. The harness
 never imports or calls a tool's `execute`, constructs an ExtensionAPI mock, or
 imports the broken installed public SDK entry point.
@@ -138,7 +138,7 @@ Sanitized log excerpt (IDs omitted here only for readability; artifact retains
 request/call IDs):
 
 ```json
-{"type":"extension_ui_request","method":"confirm","title":"Knowledge Studio V2: embedding"}
+{"type":"extension_ui_request","method":"confirm","title":"Knowledge Studio: embedding"}
 {"type":"extension_ui_response","confirmed":false}
 {"type":"tool_execution_end","toolName":"ks_v2_index","isError":true}
 ```
@@ -367,7 +367,7 @@ Before live execution:
 
 ```sh
 node --check scripts/pi-e2e-smoke.mjs
-node --experimental-strip-types --test tests/pi-e2e-smoke.test.ts tests/v2-extension.test.ts
+node --experimental-strip-types --test tests/pi-e2e-smoke.test.ts tests/extension.test.ts
 npm run check
 ```
 

@@ -8,7 +8,7 @@ import type {
   ExtensionContext,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import v2 from "../extensions/v2.ts";
+import extension from "../extensions/index.ts";
 import { encodePng } from "../src/adapters/export/encode-png.ts";
 import { KnowledgeRuntime } from "../src/application/knowledge-runtime.ts";
 import { SqliteCatalog } from "../src/adapters/storage/sqlite-catalog.ts";
@@ -22,7 +22,7 @@ function register(env: Record<string, string> = {}) {
   const tools = new Map<string, ToolDefinition>();
   try {
     // Test double exposes only registration; load must not call other host APIs.
-    v2({
+    extension({
       registerCommand() {},
       registerTool(tool: ToolDefinition) {
         tools.set(tool.name, tool);
@@ -149,7 +149,7 @@ test("bundled generation denial and epoch changes gate model and export", async 
       return response(wire(input.bundle));
     });
     await assert.rejects(invoke(tools, "ks_v2_generate", params, context(cwd, async title => {
-      assert.equal(title, "Knowledge Studio V2: generate");
+      assert.equal(title, "Knowledge Studio: generate");
       if (stage === "epoch-generate") await remove();
       return stage !== "deny-generate";
     })), /denied|Sources changed during generation/);

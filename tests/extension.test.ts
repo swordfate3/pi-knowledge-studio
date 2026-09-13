@@ -8,7 +8,7 @@ import type {
   ExtensionContext,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import v2 from "../extensions/v2.ts";
+import extension from "../extensions/index.ts";
 import type { AnswerWireResponse } from "../src/domain/answer.ts";
 import { encodePng } from "../src/adapters/export/encode-png.ts";
 import { KnowledgeRuntime } from "../src/application/knowledge-runtime.ts";
@@ -22,7 +22,7 @@ function register(env: Record<string, string> = {}) {
   const tools = new Map<string, ToolDefinition>();
   try {
     // Test double exposes only registration; load must not call other host APIs.
-    v2({
+    extension({
       registerCommand() {},
       registerTool(tool: ToolDefinition) {
         tools.set(tool.name, tool);
@@ -66,7 +66,7 @@ const modelEnv = {
   PI_KS_V2_VISION_MODEL: "vision-fixture",
 };
 
-test("V2 registers additive tools without writes/network; headless defaults deny", async (t) => {
+test("Studio registers its tools without writes/network; headless defaults deny", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-extension-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const network = t.mock.method(globalThis, "fetch", async () => {
@@ -142,7 +142,7 @@ test("generation approves actual bundle before egress and all sharing before exp
   const ctx = context(cwd, async (title, message) => {
     approvals.push(title.split(": ")[1]!);
     if (title.endsWith("import")) return true;
-    assert.equal(title, "Knowledge Studio V2: generate");
+    assert.equal(title, "Knowledge Studio: generate");
     assert.match(message, /允许 Studio 一次完成这次生成吗/);
     assert.match(message, /Hello evidence/);
     assert.match(message, /revisionHash/);
@@ -269,7 +269,7 @@ test("generation honors none, selective and required with host-linked answer fig
           assert.equal(preview.title, "Separate display title");
           assert.equal(preview.figurePolicy, policy);
         }
-        assert.equal(title, "Knowledge Studio V2: generate");
+        assert.equal(title, "Knowledge Studio: generate");
         return true;
       }));
       const content = response.content[0]!;
@@ -1316,7 +1316,7 @@ test("all new Studio children are excluded as source input", async t => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-layout-source-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));
   const tools = registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "import" });
-  for (const child of ["collections", "pdf-jobs", "pdf-generations", "exports", "legacy-v1"]) {
+  for (const child of ["collections", "pdf-jobs", "pdf-generations", "exports"]) {
     await assert.rejects(invoke(tools, "ks_v2_import", { collection: "demo", path: `.pi/knowledge-studio/${child}/source.md` }, context(cwd)), /excludes/);
   }
   assert.deepEqual(await readdir(cwd), []);

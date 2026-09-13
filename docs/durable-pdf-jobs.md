@@ -1,4 +1,4 @@
-# Durable whole-PDF jobs (additive V2)
+# Durable whole-PDF jobs
 
 Pass the **whole local PDF**, not manually split files. These tools use an independent private book store, not the bounded `ks_v2_import` route or existing collection catalog.
 

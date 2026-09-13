@@ -1,60 +1,73 @@
 # Architecture
 
-> The sections below describe the implemented **0.1.0 MVP** used by the current Pi tools. A separate experimental [portable-image export slice](docs/portable-export-slice.md) is now implemented, but is not wired into these tools. The broader architecture remains proposed: see [redesign proposal](docs/multimodal-redesign.md), [validation plan](docs/redesign-validation.md), and [visual overview](docs/multimodal-redesign.html).
-
 ## Product boundary
 
-Pi Knowledge Studio is a **generic, profile-driven Pi package**. It provides reusable ingestion, provenance, lexical retrieval, asset storage, optional vision, and Markdown rendering. A profile supplies domain terminology and interpretation guidance; it does not introduce domain-specific storage or algorithms. The built-in FreeRTOS / STM32 profile is an optional demonstration of this mechanism only.
+Pi Knowledge Studio is one generic multimodal knowledge extension for Pi. The public Pi transport is `extensions/index.ts`; application behavior lives under `src/`. Compatibility-stable names such as `ks_v2_*`, `PI_KS_V2_*`, and persisted schema/recipe version strings are protocol identities, not separate product implementations.
 
-The current MVP is deliberately local and file-backed. It is not an embedding/BM25/RAG platform, complete OCR service, or document generator.
-
-## Data flow
-
-```text
-local source path
-  -> source reader (supported text/PDF formats)
-  -> normalization and character chunking
-  -> document/chunk records + SHA-256 provenance
-  -> local collection JSON and copied referenced assets
-  -> simple lexical search (chunks, optionally asset metadata)
-  -> evidence-first Markdown draft with source locators
-  -> optional vision request for selected image bytes
-```
-
-The exported API is assembled by `src/index.ts`. Responsibilities are separated into:
-
-- `src/config.ts`: environment parsing and project/global data-root resolution.
-- `src/ingest/source-reader.ts`: supported file discovery, text extraction, and safe-size asset copying.
-- `src/core/`: records, chunking, lexical scoring, stable IDs, hashes, and citation labels.
-- `src/storage/store.ts`: collection schema, JSON persistence, atomic writes, and manifest counts.
-- `src/retrieval/search.ts`: bounded lexical search and optional asset search.
-- `src/generation/markdown.ts`: evidence-first Markdown output; it does not invent evidence.
-- `src/profiles/profile.ts`: generic and optional example profiles.
-- `src/vision/provider.ts`: opt-in OpenAI-compatible image explanation adapter.
-
-## Storage and boundaries
-
-The V1 data root defaults to `.pi/knowledge-studio/legacy-v1` for project scope; explicit standalone global scope retains the user's Pi data area, and `PI_KNOWLEDGE_STUDIO_HOME` overrides V1 only. V1 collections are keyed under `collections/<safe-name>/`, with `collection.json` and an `assets/` directory. Writes use a temporary file followed by rename. Source URIs and stored asset paths remain part of provenance, so output must be reviewed before sharing.
-
-The source boundary is local filesystem input. Supported discovery includes Markdown, text, RST, HTML, JSON, CSV, and PDF paths; Markdown and HTML can reference local images that are copied. Network image URLs are not fetched. PDF extraction is optional and text-focused; absent support produces a warning rather than complete OCR. Vision is the only outbound content path and is explicitly configured by the caller.
+The implementation is local-first and provenance-aware. It provides bounded document capture, content-addressed blobs, SQLite catalogs, lexical/hybrid retrieval, optional model adapters, grounded generation, portable exports, and durable native-PDF jobs. It does not claim unrestricted document rendering, semantic proof, complete OCR/layout recovery, or production multi-tenant isolation.
 
 ## Dependency direction
 
-Profiles and core records are stable domain concepts. Ingestion, storage, retrieval, rendering, and vision are adapters/use cases around those concepts. Core code must stay independent of Pi transport details, vendor SDKs, databases, and board-specific assumptions. New integrations should be optional adapters, not hidden requirements of the generic core.
+```text
+extensions/index.ts                 Pi tools, confirmations, host configuration
+        |
+        v
+src/application/                    use cases and orchestration
+        |
+        +--> src/domain/            evidence, answer, OCR, rendition contracts
+        +--> src/ports/             adapter interfaces
+        |
+        v
+src/adapters/                       SQLite/blob/model/parser/export implementations
 
-## Runtime and verification
+src/core/                           shared path and retrieval primitives
+```
 
-The package requires Node.js `>=22.19.0`, uses native ESM and TypeScript, and has no generated vendor workflow. Run:
+- `src/domain/` contains durable contracts and must not depend on Pi transport or concrete providers.
+- `src/ports/` defines adapter boundaries.
+- `src/application/` coordinates capture, retrieval, validation, generation, enrichment, PDF jobs, and recovery.
+- `src/adapters/` owns local storage, parsers, export rendering, and optional HTTP model protocols.
+- `src/core/` contains reusable path-safety, storage-root, and retrieval-chunk helpers.
+- `extensions/index.ts` is the only package entry and owns user-visible tools, approvals, and environment snapshots.
+
+## Main data flow
+
+```text
+approved local source
+  -> confined parser/capture adapter
+  -> validated immutable text/image provenance
+  -> SQLite catalog + content-addressed blobs
+  -> lexical or explicitly configured hybrid retrieval
+  -> validated evidence bundle
+  -> deterministic export OR approved grounded model generation
+  -> portable Markdown/HTML + selected source assets + manifests
+```
+
+Vision-derived descriptions remain retrieval-only hints. OCR transcripts remain explicitly unverified. Neither replaces original source evidence.
+
+## Storage and compatibility
+
+The default private root is `~/.pi/knowledge-studio/`, resolved by `src/core/studio-paths.ts`, with `collections/`, `pdf-jobs/`, `pdf-generations/`, and `exports/`. `PI_KS_V2_DATA_DIR` is retained as a deployment-compatible absolute override.
+
+The removed V1 JSON implementation is not linked into the package. Current code only detects its incompatible markers and fails closed to prevent accidental overwrite. Old sibling roots are likewise detected without automatic move, merge, embedding, or reindexing. See [`docs/storage-layout.md`](docs/storage-layout.md).
+
+Persisted identifiers such as `grounded-answer-v2`, `native-pdf-job-v1`, catalog schema versions, parser recipes, and model-space revisions are data/wire contracts. Changing them requires an explicit migration and is independent of product naming.
+
+## Security and consent
+
+- Source paths are confined beneath the Pi working directory and checked against symlink/path policy.
+- Runtime storage is private and outside the checkout by default.
+- Network embedding, reranking, generation, vision, and content disclosure require the applicable trusted approval or host grant.
+- Registration performs no filesystem writes or network requests.
+- Gates are consent boundaries, not an OS sandbox; same-user processes and other extensions may still access data.
+- Cancellation is cooperative and cannot necessarily interrupt an in-flight HTTP request or already committed local mutation.
+
+## Verification
 
 ```sh
 npm run check
 npm test
+npm pack --dry-run
 ```
 
-These validate TypeScript and execute available tests; they do not establish OCR, model, or publication-quality behavior.
-
-## Security posture
-
-Do not ingest credentials, private books, secrets, or broad home-directory trees. Keep `.env` and generated collection data out of commits, use least-privilege source/output directories, and understand that enabling vision sends selected image data to the configured endpoint. See [config/README.md](config/README.md) and [README.md](README.md) for operational details.
-
-Default V2 stores share the user-private `~/.pi/knowledge-studio/` umbrella (`/root/.pi/knowledge-studio/` in the standard container), with `collections/`, `pdf-jobs/`, `pdf-generations/` (including the model-profile registry), and `exports/`. `PI_KS_V2_DATA_DIR` provides an absolute override; explicit runtime roots remain caller-controlled. The shared resolver is `src/core/studio-paths.ts`. Existing project-local data is not automatically moved or merged. See [storage layout and offline upgrade](docs/storage-layout.md).
+These checks verify the tested contracts and package contents; they do not establish semantic correctness, production scalability, or a latency SLA.

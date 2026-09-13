@@ -1,6 +1,6 @@
 {
   "name": "pi-knowledge-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A generic, provenance-aware multimodal knowledge workspace extension for Pi.",
   "keywords": [
     "pi-package",
@@ -28,8 +28,7 @@
   ],
   "pi": {
     "extensions": [
-      "./extensions/index.ts",
-      "./extensions/v2.ts"
+      "./extensions/index.ts"
     ]
   },
   "dependencies": {
