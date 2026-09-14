@@ -71,7 +71,7 @@ It opens an interactive menu for importing, listing, searching, exporting, gener
 /studio help
 ```
 
-The command starts the appropriate Studio workflow through Pi and preserves every existing file-access, disclosure, model-egress, and export confirmation. It does not grant capabilities or bypass approvals. See [`docs/usage.md`](docs/usage.md) for full syntax and limits.
+The command starts the appropriate Studio workflow through Pi and preserves every existing file-access, disclosure, model-egress, and export confirmation. In a fully trusted local session, `/studio-permissions all` enables a session-only convenience mode; `/studio-permissions off` restores individual confirmations. See [`docs/usage.md`](docs/usage.md) for full syntax and limits.
 
 ## Tools
 

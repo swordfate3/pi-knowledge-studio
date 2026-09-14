@@ -66,6 +66,55 @@ const modelEnv = {
   PI_KS_V2_VISION_MODEL: "vision-fixture",
 };
 
+test("session all-permissions command bypasses confirmations until turned off", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "ks-v2-permissions-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  await writeFile(join(cwd, "notes.md"), "permission command test");
+  const tools = new Map<string, ToolDefinition>();
+  const commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> }>();
+  extension({
+    registerCommand(name: string, command: { handler: (args: string, ctx: ExtensionContext) => Promise<void> }) {
+      commands.set(name, command);
+    },
+    registerTool(tool: ToolDefinition) {
+      tools.set(tool.name, tool);
+    },
+  } as unknown as ExtensionAPI);
+  const notifications: string[] = [];
+  const commandContext = {
+    cwd,
+    hasUI: true,
+    signal: undefined,
+    ui: { notify(message: string) { notifications.push(message); } },
+  } as unknown as ExtensionContext;
+  const permissions = commands.get("studio-permissions");
+  assert.ok(permissions);
+  await permissions.handler("all", commandContext);
+  assert.match(notifications[0] ?? "", /已启用/);
+
+  const rejectingUi = context(cwd, async () => {
+    throw new Error("confirmation should be bypassed");
+  });
+  await invoke(tools, "ks_v2_import", { collection: "demo", path: "notes.md" }, rejectingUi);
+
+  await permissions.handler("off", commandContext);
+  await assert.rejects(
+    invoke(tools, "ks_v2_import", { collection: "demo", path: "notes.md" }, context(cwd, async () => false)),
+    /denied/,
+  );
+});
+
+test("explicit all headless grant bypasses UI confirmation at startup", async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), "ks-v2-all-grant-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  await writeFile(join(cwd, "notes.md"), "startup all grant test");
+  const tools = registerFor(cwd, { PI_KS_V2_HEADLESS_GRANTS: "all" });
+  const rejectingUi = context(cwd, async () => {
+    throw new Error("confirmation should be bypassed");
+  });
+  await invoke(tools, "ks_v2_import", { collection: "demo", path: "notes.md" }, rejectingUi);
+});
+
 test("Studio registers its tools without writes/network; headless defaults deny", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "ks-v2-extension-"));
   t.after(() => rm(cwd, { recursive: true, force: true }));

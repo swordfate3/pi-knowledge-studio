@@ -132,5 +132,5 @@ test("/studio help is local and documents the safety boundary", async () => {
   assert.deepEqual(prompts, []);
   assert.equal(notifications[0]?.level, "info");
   assert.match(notifications[0]?.message ?? "", /\/studio import/);
-  assert.match(notifications[0]?.message ?? "", /不会绕过这些授权/);
+  assert.match(notifications[0]?.message ?? "", /studio-permissions all\|off\|status/);
 });

@@ -7,7 +7,7 @@ Knowledge Studio reads deployment configuration from the host environment when `
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `PI_KS_V2_DATA_DIR` | Absolute private runtime root | `~/.pi/knowledge-studio/` |
-| `PI_KS_V2_HEADLESS_GRANTS` | Comma-separated headless capability allowlist | deny all |
+| `PI_KS_V2_HEADLESS_GRANTS` | Comma-separated headless capability allowlist; explicit `all` enables every capability | deny all |
 | `PI_KS_V2_PDF_MAX_INPUT_BYTES` | Durable-PDF source quota | implementation default |
 | `PI_KS_V2_PDF_MAX_STORAGE_BYTES` | Durable-PDF storage quota | implementation default |
 | `PI_KS_V2_OCR_CONFIG` | Host-approved OCR configuration | unset |
@@ -32,4 +32,4 @@ The old `PI_KNOWLEDGE_STUDIO_*` variables are no longer read because the V1 runt
 
 ## Configuration hygiene
 
-Use an untracked environment or process manager. Never commit API keys, `.env` files, private documents, generated collections, downloaded models, or machine-specific book paths. Apply least-privilege grants and private filesystem permissions; ignore rules are not a security boundary.
+Use an untracked environment or process manager. Never commit API keys, `.env` files, private documents, generated collections, downloaded models, or machine-specific book paths. Apply least-privilege grants and private filesystem permissions; ignore rules are not a security boundary. `PI_KS_V2_HEADLESS_GRANTS=all` intentionally disables the extension's capability prompts at startup; use only for a fully trusted local process.

@@ -10,7 +10,9 @@ import {
 } from "../src/adapters/parsing/capture-image.ts";
 /** Knowledge Studio entry point: load with pi -e ./extensions/index.ts.
  * Host configuration is snapshotted at registration, never accepted from tool arguments.
- * PI_KS_V2_HEADLESS_GRANTS: comma-separated import,search,embedding,index,export,remove,list,generate,vision,enrich,rerank.
+ * PI_KS_V2_HEADLESS_GRANTS: comma-separated import,search,embedding,index,export,remove,list,generate,vision,enrich,rerank, or all.
+ * /studio-permissions all: explicit session-only convenience mode; bypasses all
+ * Knowledge Studio confirmations until the extension is reloaded or turned off.
  * PI_KS_V2_RERANK_{ENDPOINT,MODEL,REVISION,API_KEY,TIMEOUT_MS}: optional reranker.
  * PI_KS_V2_VISION_REVISION: explicit host revision required for persisted hints.
  * PI_KS_V2_{GENERATE,VISION}_{ENDPOINT,MODEL,API_KEY}: complete chat/completions URL.
@@ -245,6 +247,10 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
       .split(",")
       .map((value) => value.trim()),
   );
+  // `all` is an explicit host opt-in for startup/headless use. The slash
+  // command below can enable the same mode for the current loaded extension.
+  const allPermissionsAtStartup = grants.has("all");
+  let allPermissionsEnabled = allPermissionsAtStartup;
   const signalFor = (ctx: ExtensionContext, signal?: AbortSignal) =>
     AbortSignal.any(
       [signal, ctx.signal].filter(
@@ -260,6 +266,7 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
     generationApproval?: GenerationApproval,
   ) {
     signal.throwIfAborted();
+    if (allPermissionsEnabled) return;
     const approvedByWorkflow =
       generationApproval !== undefined &&
       ctx.hasUI &&
@@ -291,7 +298,7 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
     workflowGrants: readonly Grant[],
   ): Promise<GenerationApproval | undefined> {
     signal.throwIfAborted();
-    if (!ctx.hasUI) return undefined;
+    if (allPermissionsEnabled || !ctx.hasUI) return undefined;
     const ok = await ctx.ui.confirm("Knowledge Studio: generate", message, {
       signal,
       timeout: 120_000,
@@ -544,6 +551,38 @@ export default function knowledgeStudio(pi: ExtensionAPI): void {
   pi.registerCommand("studio", {
     description: STUDIO_COMMAND_DESCRIPTION,
     handler: (args, ctx) => runStudioCommand(args, ctx, (prompt) => pi.sendUserMessage(prompt)),
+  });
+  pi.registerCommand("studio-permissions", {
+    description: "Knowledge Studio 权限：查看、启用或关闭本次会话的全部授权",
+    async handler(args, ctx) {
+      const action = args.trim().toLowerCase();
+      if (action === "all" || action === "on" || action === "enable" || action === "启用") {
+        allPermissionsEnabled = true;
+        ctx.ui.notify(
+          "Knowledge Studio：已启用本次扩展会话的全部权限；后续操作不再询问授权。重新加载扩展后会恢复默认授权流程。",
+          "warning",
+        );
+        return;
+      }
+      if (action === "off" || action === "disable" || action === "关闭") {
+        allPermissionsEnabled = false;
+        ctx.ui.notify("Knowledge Studio：已关闭全部权限模式，后续操作恢复逐项授权。", "info");
+        return;
+      }
+      if (action === "" || action === "status" || action === "状态") {
+        ctx.ui.notify(
+          allPermissionsEnabled
+            ? "Knowledge Studio：全部权限模式已启用（仅当前扩展会话）。"
+            : "Knowledge Studio：全部权限模式未启用，当前使用逐项授权。",
+          "info",
+        );
+        return;
+      }
+      ctx.ui.notify(
+        "用法：/studio-permissions all（启用本次会话全部权限）、/studio-permissions off（关闭）、/studio-permissions status（查看状态）。",
+        "warning",
+      );
+    },
   });
   const profileSchema = Type.Object({
     id: Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$" }),

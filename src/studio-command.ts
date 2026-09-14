@@ -37,12 +37,13 @@ function usage(): string {
     "- `/studio books <书名或B-短引用>` — 查看一本 PDF 的处理状态",
     "- `/studio book-search <书名或B-短引用> <问题>` — 搜索已解析的 PDF 书籍",
     "- `/studio help` — 查看帮助",
+    "- `/studio-permissions all|off|status` — 本次扩展会话启用/关闭/查看全部权限（仅可信本地会话）",
     "",
     "含空格的路径、标题或问题可使用引号。例：",
     "",
     '```text\n/studio import freertos "docs/FreeRTOS 笔记.md"\n/studio search freertos "优先级继承如何工作？"\n/studio generate freertos priority-inheritance "优先级继承详解" | "互斥量与优先级继承"\n/studio pdf "books/FreeRTOS 内核实现与应用开发实战指南.pdf"\n```',
     "",
-    "Studio 仍会显示必要的文件访问、内容披露、模型调用和导出确认；命令不会绕过这些授权。",
+    "Studio 默认仍会显示必要的文件访问、内容披露、模型调用和导出确认；如明确输入 /studio-permissions all，则本次扩展会话不再询问 Knowledge Studio 授权，直到 off 或重新加载扩展。",
   ].join("\n");
 }
 
