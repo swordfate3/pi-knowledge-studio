@@ -14,6 +14,10 @@ npm test
 pi -e extensions/index.ts
 ```
 
+Pi supplies `typebox` and the Pi host APIs at extension runtime, so they are wildcard (`"*"`) peer dependencies, not bundled/runtime dependencies. The checkout also keeps `typebox` (and Pi) as development dependencies for native Node tests and type checking; these do not replace the host's runtime modules. Updating this source checkout does **not** update a separately installed Pi package checkout: update/reinstall that installation separately, then reload Pi.
+
+The real-Pi smoke tests discover a JS CLI from the local Pi package's manifest/bin, then from a real JS entry on `PATH`. For a specific host installation, set host-only `PI_KS_PI_CLI=/absolute/path/to/pi/dist/bundle/cli.js` when running the tests or `scripts/pi-e2e-smoke.mjs`; it must be a JavaScript entry runnable by the current Node executable, not a shell wrapper. See [test coverage and CLI selection](../tests/README.md#real-pi-smoke-tests).
+
 No separate compile step or model service is needed for lexical retrieval and evidence export. The checks above are validation commands, not a claim that every remote model has been tested. A normal `pi install /path/to/pi-knowledge-studio` uses the manifest and enables the sole extension after loading/reloading the package. The explicit `-e` example is an alternative for running directly from a checkout.
 
 For a separate source workspace, install dependencies in the checkout first, then run:

@@ -13,8 +13,10 @@ import {
   readdir,
   rm,
 } from "node:fs/promises";
+import { accessSync, constants, readFileSync, realpathSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import { answerGenerationFromEnv, answerGenerationPayload } from "../src/adapters/models/answer-model-options.ts";
@@ -57,8 +59,60 @@ function requireIdleQwen(observation) {
 }
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const defaultCli =
-  "/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js";
+const piPackage = "@earendil-works/pi-coding-agent";
+
+function jsEntry(path) {
+  const entry = realpathSync(path);
+  assert.ok(statSync(entry).isFile(), "CLI must be a file");
+  assert.ok([".js", ".mjs", ".cjs"].includes(extname(entry)),
+    "CLI must be a JavaScript entry executable by process.execPath (not a shell wrapper)");
+  accessSync(entry, constants.R_OK);
+  return entry;
+}
+
+/** Locate only: never import or execute Pi. Undefined means default discovery failed.
+ * Explicit host overrides are strict and never fall back to a different installation. */
+export function resolvePiCli({ host = process.env, requireFrom = import.meta.url } = {}) {
+  if (host.PI_KS_PI_CLI !== undefined) {
+    try {
+      assert.ok(typeof host.PI_KS_PI_CLI === "string" && host.PI_KS_PI_CLI.trim(), "empty path");
+      return jsEntry(host.PI_KS_PI_CLI);
+    } catch (error) {
+      throw new Error(`Invalid PI_KS_PI_CLI: ${String(error)}`, { cause: error });
+    }
+  }
+  const require = createRequire(requireFrom);
+  const manifests = new Set();
+  try {
+    manifests.add(require.resolve(`${piPackage}/package.json`));
+  } catch {
+    // Modern Pi exports hide package.json (and may provide import-only exports).
+    // resolve.paths locates the same package without loading its entry point.
+    for (const base of require.resolve.paths(piPackage) ?? []) {
+      manifests.add(join(base, piPackage, "package.json"));
+    }
+  }
+  for (const manifestPath of manifests) {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      assert.equal(manifest.name, piPackage);
+      const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.pi;
+      assert.ok(typeof bin === "string" && bin.length > 0, "Missing Pi bin");
+      return jsEntry(resolve(dirname(manifestPath), bin));
+    } catch {
+      // An incomplete local dev installation can still use the host CLI on PATH.
+    }
+  }
+  for (const directory of (host.PATH ?? "").split(delimiter).filter(Boolean)) {
+    try {
+      // Resolve symlinks first: ~/.local/bin/pi commonly points at cli.js.
+      return jsEntry(join(directory, "pi"));
+    } catch {
+      // Shell wrappers/native executables cannot be launched with process.execPath.
+    }
+  }
+  return undefined;
+}
 const generationQuestion = "How does the synthetic semaphore wake a waiting task?";
 const generationTitle = "Synthetic guide";
 const generationFigurePolicy = "required";
@@ -473,11 +527,12 @@ async function verifyPackage(path, original) {
 }
 
 export async function runSmoke({
-  cli = defaultCli,
   keep = false,
   live = false,
 } = {}) {
   const hostSettings = generationHostSettings();
+  const cli = resolvePiCli();
+  assert.ok(cli, "Pi JS CLI unavailable: install the Pi dev dependency, expose a Pi JS entry on PATH, or set PI_KS_PI_CLI");
   const generationTimeoutMs = hostSettings.timeoutMs;
   const root = await mkdtemp(join(tmpdir(), "pi-e2e-"));
   const home = join(root, "home"),
